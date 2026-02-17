@@ -1,0 +1,13 @@
+{
+  "name": "aicura",
+  "version": "1.0.0",
+  "description": "AIcura - Educational Retinal Health Analysis Prototype",
+  "main": "index.html",
+  "scripts": {
+    "start": "python -m http.server 8000",
+    "dev": "npx http-server -p 8000 -o"
+  },
+  "keywords": ["healthcare", "retinal", "education", "ai"],
+  "author": "CapStone Team",
+  "license": "MIT"
+}

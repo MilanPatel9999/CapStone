@@ -1,0 +1,536 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AIcura - Educational Retinal Health Analysis</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen', 'Ubuntu', 'Cantarell', sans-serif;
+            background-color: #ffffff;
+            color: #000;
+            -webkit-font-smoothing: antialiased;
+            -moz-osx-font-smoothing: grayscale;
+        }
+
+        /* Navigation */
+        nav {
+            position: fixed;
+            top: 0;
+            width: 100%;
+            background: rgba(255, 255, 255, 0.8);
+            backdrop-filter: blur(10px);
+            border-bottom: 1px solid rgba(0, 0, 0, 0.1);
+            z-index: 50;
+        }
+
+        nav-content {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 1rem 1.5rem;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .logo {
+            font-size: 1.5rem;
+            font-weight: 600;
+        }
+
+        .nav-links {
+            display: flex;
+            gap: 2rem;
+            align-items: center;
+        }
+
+        .nav-links a {
+            font-size: 0.875rem;
+            color: #666;
+            text-decoration: none;
+            transition: color 0.3s;
+        }
+
+        .nav-links a:hover {
+            color: #000;
+        }
+
+        .nav-links button {
+            background: #000;
+            color: #fff;
+            border: none;
+            padding: 0.5rem 1.5rem;
+            border-radius: 2rem;
+            font-size: 0.875rem;
+            font-weight: 500;
+            cursor: pointer;
+            transition: background 0.3s;
+        }
+
+        .nav-links button:hover {
+            background: #333;
+        }
+
+        /* Hero Section */
+        .hero {
+            padding-top: 8rem;
+            padding-bottom: 6rem;
+            text-align: center;
+            max-width: 1200px;
+            margin: 0 auto;
+            padding-left: 1.5rem;
+            padding-right: 1.5rem;
+        }
+
+        .eyebrow {
+            display: inline-block;
+            background: #f3f3f3;
+            padding: 0.5rem 1rem;
+            border-radius: 2rem;
+            font-size: 0.875rem;
+            font-weight: 500;
+            color: #666;
+            margin-bottom: 1.5rem;
+        }
+
+        .hero h1 {
+            font-size: 3.5rem;
+            line-height: 1.2;
+            font-weight: 600;
+            margin-bottom: 1.5rem;
+        }
+
+        .gradient-text {
+            background: linear-gradient(135deg, #2563eb 0%, #06b6d4 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+
+        .hero p {
+            font-size: 1.25rem;
+            color: #666;
+            margin-bottom: 3rem;
+            max-width: 48rem;
+            margin-left: auto;
+            margin-right: auto;
+            line-height: 1.6;
+        }
+
+        .hero-button {
+            background: #000;
+            color: #fff;
+            border: none;
+            padding: 1rem 2rem;
+            border-radius: 2rem;
+            font-size: 1rem;
+            font-weight: 500;
+            cursor: pointer;
+            display: inline-flex;
+            align-items: center;
+            gap: 0.75rem;
+            transition: all 0.3s;
+        }
+
+        .hero-button:hover {
+            background: #333;
+            transform: scale(1.05);
+        }
+
+        .arrow {
+            width: 1.25rem;
+            height: 1.25rem;
+            transition: transform 0.3s;
+        }
+
+        .hero-button:hover .arrow {
+            transform: translateX(0.25rem);
+        }
+
+        /* Features Grid */
+        .features {
+            background: #f9fafb;
+            padding: 5rem 1.5rem;
+        }
+
+        .features-container {
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+
+        .features-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 2rem;
+        }
+
+        .feature-card {
+            background: #fff;
+            padding: 2rem;
+            border-radius: 1.5rem;
+            border: 1px solid #e5e7eb;
+            transition: all 0.3s;
+        }
+
+        .feature-card:hover {
+            border-color: #d1d5db;
+            box-shadow: 0 10px 25px rgba(0, 0, 0, 0.1);
+        }
+
+        .feature-icon {
+            width: 3rem;
+            height: 3rem;
+            border-radius: 0.75rem;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin-bottom: 1.5rem;
+            font-size: 1.5rem;
+        }
+
+        .icon-blue {
+            background: #dbeafe;
+        }
+
+        .icon-green {
+            background: #dcfce7;
+        }
+
+        .icon-purple {
+            background: #f3e8ff;
+        }
+
+        .feature-card h3 {
+            font-size: 1.25rem;
+            margin-bottom: 0.75rem;
+            font-weight: 600;
+        }
+
+        .feature-card p {
+            font-size: 0.875rem;
+            color: #666;
+            line-height: 1.6;
+        }
+
+        /* FAQ */
+        .faq-section {
+            background: #f9fafb;
+            padding: 6rem 1.5rem;
+        }
+
+        .faq-container {
+            max-width: 56rem;
+            margin: 0 auto;
+        }
+
+        .faq-title {
+            font-size: 3rem;
+            font-weight: 600;
+            text-align: center;
+            margin-bottom: 4rem;
+        }
+
+        details {
+            background: #fff;
+            padding: 1.5rem;
+            border-radius: 1.5rem;
+            border: 1px solid #e5e7eb;
+            margin-bottom: 1.5rem;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+
+        details:hover {
+            border-color: #d1d5db;
+        }
+
+        details[open] {
+            border-color: #000;
+        }
+
+        summary {
+            font-weight: 600;
+            font-size: 1rem;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            list-style: none;
+        }
+
+        summary::after {
+            content: "▼";
+            color: #999;
+            transition: transform 0.3s;
+        }
+
+        details[open] summary::after {
+            transform: rotate(180deg);
+        }
+
+        details p {
+            color: #666;
+            font-size: 0.875rem;
+            line-height: 1.6;
+            margin-top: 1rem;
+        }
+
+        /* Footer CTA */
+        .footer-cta {
+            padding: 6rem 1.5rem;
+            text-align: center;
+        }
+
+        .footer-cta h2 {
+            font-size: 3rem;
+            font-weight: 600;
+            margin-bottom: 1.5rem;
+        }
+
+        .footer-cta p {
+            font-size: 1.25rem;
+            color: #666;
+            margin-bottom: 2rem;
+        }
+
+        .footer-cta button {
+            background: #000;
+            color: #fff;
+            border: none;
+            padding: 1rem 2rem;
+            border-radius: 2rem;
+            font-size: 1rem;
+            font-weight: 500;
+            cursor: pointer;
+            display: inline-flex;
+            align-items: center;
+            gap: 0.75rem;
+            transition: all 0.3s;
+        }
+
+        .footer-cta button:hover {
+            background: #333;
+            transform: scale(1.05);
+        }
+
+        /* Footer */
+        footer {
+            border-top: 1px solid #e5e7eb;
+            padding: 3rem 1.5rem;
+            background: #fff;
+        }
+
+        .footer-content {
+            max-width: 1200px;
+            margin: 0 auto;
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 3rem;
+            margin-bottom: 3rem;
+            font-size: 0.875rem;
+            color: #666;
+        }
+
+        .footer-section h4 {
+            font-weight: 600;
+            color: #000;
+            margin-bottom: 1rem;
+        }
+
+        .footer-section ul {
+            list-style: none;
+        }
+
+        .footer-section a {
+            color: #666;
+            text-decoration: none;
+            transition: color 0.3s;
+            display: block;
+            margin-bottom: 0.75rem;
+        }
+
+        .footer-section a:hover {
+            color: #000;
+        }
+
+        .footer-bottom {
+            border-top: 1px solid #e5e7eb;
+            padding-top: 2rem;
+            text-align: center;
+            font-size: 0.75rem;
+            color: #999;
+        }
+
+        /* Responsive */
+        @media (max-width: 768px) {
+            .hero h1 {
+                font-size: 2.5rem;
+            }
+
+            .hero p {
+                font-size: 1rem;
+            }
+
+            .mode-header h2 {
+                font-size: 2rem;
+            }
+
+            .faq-title {
+                font-size: 2rem;
+            }
+
+            .footer-cta h2 {
+                font-size: 2rem;
+            }
+
+            .nav-links {
+                gap: 1rem;
+            }
+
+            .nav-links a {
+                display: none;
+            }
+        }
+    </style>
+</head>
+<body>
+    <!-- Navigation -->
+    <nav>
+        <nav-content>
+            <div class="logo">AIcura</div>
+            <div class="nav-links">
+                <a href="#features">Features</a>
+                <a href="#mode">Analysis</a>
+                <a href="#faq">FAQ</a>
+                <button>Get Started</button>
+            </div>
+        </nav-content>
+    </nav>
+
+    <!-- Hero Section -->
+    <section class="hero">
+        <div class="eyebrow">⚡ Introducing AIcura</div>
+        <h1>Understand your<br><span class="gradient-text">retinal health</span></h1>
+        <p>Educational insights powered by advanced AI. Upload a retinal image or explore how modern machine learning helps us understand eye health.</p>
+        <button class="hero-button" onclick="goToChat()">
+            Start Exploring
+            <svg class="arrow" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <polyline points="5 12 19 12"></polyline>
+                <polyline points="12 5 19 12 12 19"></polyline>
+            </svg>
+        </button>
+    </section>
+
+    <!-- Features Grid -->
+    <section class="features" id="features">
+        <div class="features-container">
+            <div class="features-grid">
+                <div class="feature-card">
+                    <div class="feature-icon icon-blue">🧠</div>
+                    <h3>AI-Powered Analysis</h3>
+                    <p>Advanced machine learning models trained to identify patterns in retinal images with remarkable accuracy.</p>
+                </div>
+                <div class="feature-card">
+                    <div class="feature-icon icon-green">🔒</div>
+                    <h3>Privacy First</h3>
+                    <p>Your data stays with you. All analysis happens securely with enterprise-grade encryption.</p>
+                </div>
+                <div class="feature-card">
+                    <div class="feature-icon icon-purple">⚡</div>
+                    <h3>Educational Focus</h3>
+                    <p>Designed for learning. Perfect for students, educators, and healthcare professionals exploring AI applications.</p>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- FAQ -->
+    <section class="faq-section" id="faq">
+        <div class="faq-container">
+            <h2 class="faq-title">Questions?</h2>
+            
+            <details>
+                <summary>Is this a replacement for professional eye exams?</summary>
+                <p>No. AIcura is an educational tool designed for learning about retinal health. Always consult eye care professionals for diagnosis and treatment.</p>
+            </details>
+
+            <details>
+                <summary>How accurate is the AI analysis?</summary>
+                <p>Our models are trained on extensive datasets and achieve high accuracy for educational purposes. However, accuracy should never replace professional medical judgment.</p>
+            </details>
+
+            <details>
+                <summary>Can I upload my personal medical images?</summary>
+                <p>Yes, but remember this is educational only. If you need diagnosis, consult a qualified ophthalmologist or optometrist.</p>
+            </details>
+
+            <details>
+                <summary>Is my data private?</summary>
+                <p>Your privacy is important to us. All uploads are processed securely and are not stored without explicit consent.</p>
+            </details>
+        </div>
+    </section>
+
+    <!-- Footer CTA -->
+    <section class="footer-cta">
+        <h2>Ready to explore?</h2>
+        <p>Start learning about retinal health with AI-powered insights.</p>
+        <button onclick="goToChat()">
+            Get Started Now
+            <svg class="arrow" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <polyline points="5 12 19 12"></polyline>
+                <polyline points="12 5 19 12 12 19"></polyline>
+            </svg>
+        </button>
+    </section>
+
+    <!-- Footer -->
+    <footer>
+        <div class="footer-content">
+            <div class="footer-section">
+                <h4>AIcura</h4>
+                <p>Educational AI for retinal health learning.</p>
+            </div>
+            <div class="footer-section">
+                <h4>Product</h4>
+                <ul>
+                    <li><a href="#">Features</a></li>
+                    <li><a href="#">Pricing</a></li>
+                    <li><a href="#">Security</a></li>
+                </ul>
+            </div>
+            <div class="footer-section">
+                <h4>Learn</h4>
+                <ul>
+                    <li><a href="#">Documentation</a></li>
+                    <li><a href="#">Blog</a></li>
+                    <li><a href="#">Status</a></li>
+                </ul>
+            </div>
+            <div class="footer-section">
+                <h4>Legal</h4>
+                <ul>
+                    <li><a href="#">Privacy</a></li>
+                    <li><a href="#">Terms</a></li>
+                    <li><a href="#">Disclaimer</a></li>
+                </ul>
+            </div>
+        </div>
+        <div class="footer-bottom">
+            <p>© 2026 AIcura. For educational purposes only. Not a medical diagnosis.</p>
+        </div>
+    </footer>
+
+    <!-- Script -->
+    <script>
+        function goToChat() {
+            window.location.href = 'chat.html';
+        }
+    </script>
+</body>
+</html>
