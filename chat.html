@@ -3,489 +3,1006 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>AIcura - Chat</title>
+    <title>AIcura | Retinal Insight Platform</title>
     <style>
+        :root {
+            color-scheme: light;
+            --bg: #eef4f1;
+            --panel: rgba(255, 255, 255, 0.9);
+            --panel-strong: #ffffff;
+            --ink: #15221d;
+            --muted: #5a6961;
+            --line: rgba(21, 34, 29, 0.12);
+            --accent: #15795e;
+            --accent-dark: #0f614c;
+            --accent-soft: rgba(21, 121, 94, 0.1);
+            --alert: #b35d17;
+            --danger: #b83838;
+            --danger-soft: rgba(184, 56, 56, 0.12);
+            --shadow: 0 24px 60px rgba(21, 34, 29, 0.08);
+        }
+
         * {
+            box-sizing: border-box;
             margin: 0;
             padding: 0;
-            box-sizing: border-box;
         }
 
         body {
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen', 'Ubuntu', 'Cantarell', sans-serif;
-            background-color: #ffffff;
-            color: #000;
-            -webkit-font-smoothing: antialiased;
-            -moz-osx-font-smoothing: grayscale;
+            min-height: 100vh;
+            font-family: "Trebuchet MS", "Segoe UI", sans-serif;
+            color: var(--ink);
+            background:
+                radial-gradient(circle at top left, rgba(21, 121, 94, 0.16), transparent 28%),
+                radial-gradient(circle at bottom right, rgba(242, 165, 78, 0.12), transparent 24%),
+                linear-gradient(180deg, #f8fbf9 0%, var(--bg) 100%);
         }
 
-        .container {
+        button,
+        textarea,
+        select {
+            font: inherit;
+        }
+
+        .page {
+            width: min(1180px, calc(100% - 28px));
+            margin: 0 auto;
+            padding: 22px 0 28px;
+        }
+
+        .shell {
+            display: grid;
+            grid-template-columns: 320px 1fr;
+            gap: 18px;
+            align-items: start;
+        }
+
+        .panel {
+            background: var(--panel);
+            border: 1px solid var(--line);
+            border-radius: 28px;
+            box-shadow: var(--shadow);
+            backdrop-filter: blur(14px);
+        }
+
+        .sidebar {
+            padding: 24px;
+            position: sticky;
+            top: 22px;
+        }
+
+        .brand-row {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 12px;
+        }
+
+        .brand {
+            font-size: 1.25rem;
+            font-weight: 700;
+        }
+
+        .back-link {
+            color: var(--muted);
+            text-decoration: none;
+            font-size: 0.95rem;
+        }
+
+        .back-link:hover {
+            color: var(--ink);
+        }
+
+        .sidebar h1 {
+            margin-top: 18px;
+            font-size: 2rem;
+            line-height: 1;
+        }
+
+        .sidebar p {
+            margin-top: 14px;
+            color: var(--muted);
+            line-height: 1.7;
+        }
+
+        .status-block,
+        .note-block,
+        .prompt-block {
+            margin-top: 18px;
+            padding: 18px;
+            border-radius: 22px;
+            background: var(--panel-strong);
+            border: 1px solid var(--line);
+        }
+
+        .status-label {
+            display: inline-block;
+            padding: 6px 10px;
+            border-radius: 999px;
+            background: var(--accent-soft);
+            color: var(--accent-dark);
+            font-size: 0.82rem;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.04em;
+        }
+
+        .status-message {
+            margin-top: 10px;
+            color: var(--muted);
+            line-height: 1.6;
+        }
+
+        .status-message.error {
+            color: var(--danger);
+        }
+
+        .future-button {
+            width: 100%;
+            margin-top: 14px;
+            padding: 12px 14px;
+            border-radius: 16px;
+            border: 1px dashed rgba(21, 34, 29, 0.2);
+            background: rgba(21, 121, 94, 0.05);
+            color: var(--muted);
+            font-weight: 700;
+            cursor: not-allowed;
+        }
+
+        .prompt-list {
+            display: grid;
+            gap: 10px;
+            margin-top: 14px;
+        }
+
+        .prompt-chip {
+            width: 100%;
+            text-align: left;
+            border: 1px solid var(--line);
+            background: #fff;
+            border-radius: 16px;
+            padding: 14px 15px;
+            cursor: pointer;
+            transition: transform 0.16s ease, border-color 0.16s ease, box-shadow 0.16s ease;
+        }
+
+        .prompt-chip:hover {
+            transform: translateY(-1px);
+            border-color: rgba(21, 121, 94, 0.28);
+            box-shadow: 0 12px 24px rgba(21, 34, 29, 0.08);
+        }
+
+        .prompt-chip strong {
+            display: block;
+            margin-bottom: 4px;
+            font-size: 0.95rem;
+        }
+
+        .prompt-chip span {
+            color: var(--muted);
+            font-size: 0.9rem;
+            line-height: 1.5;
+        }
+
+        .chat-panel {
             display: flex;
             flex-direction: column;
-            height: 100vh;
-            max-width: 900px;
-            margin: 0 auto;
-            background: #fff;
+            min-height: calc(100vh - 44px);
         }
 
-        /* Header */
-        header {
-            padding: 1rem 1.5rem;
-            border-bottom: 1px solid #e5e7eb;
+        .chat-header {
             display: flex;
             justify-content: space-between;
+            gap: 18px;
             align-items: center;
+            padding: 22px 24px;
+            border-bottom: 1px solid var(--line);
         }
 
-        .header-left {
-            display: flex;
+        .chat-header h2 {
+            font-size: 1.35rem;
+        }
+
+        .chat-header p {
+            margin-top: 6px;
+            color: var(--muted);
+        }
+
+        .status-badge {
+            display: inline-flex;
             align-items: center;
-            gap: 1rem;
-        }
-
-        .logo {
-            font-size: 1.5rem;
-            font-weight: 600;
-        }
-
-        .back-button {
-            background: none;
-            border: none;
-            color: #666;
-            cursor: pointer;
-            font-size: 1.25rem;
-            padding: 0.5rem;
-            transition: color 0.3s;
-        }
-
-        .back-button:hover {
-            color: #000;
-        }
-
-        .mode-select {
-            padding: 0.5rem 1rem;
-            border: 1px solid #d1d5db;
-            border-radius: 0.5rem;
-            font-size: 0.875rem;
-            cursor: pointer;
+            gap: 8px;
+            padding: 10px 12px;
+            border-radius: 999px;
             background: #fff;
+            border: 1px solid var(--line);
+            color: var(--muted);
+            font-size: 0.9rem;
+            white-space: nowrap;
         }
 
-        /* Chat Area */
         .chat-area {
             flex: 1;
+            padding: 22px 24px;
             overflow-y: auto;
-            padding: 2rem 1.5rem;
             display: flex;
             flex-direction: column;
-            gap: 1rem;
+            gap: 16px;
+        }
+
+        .empty-state {
+            border: 1px dashed rgba(21, 34, 29, 0.18);
+            background: rgba(255, 255, 255, 0.74);
+            border-radius: 24px;
+            padding: 28px;
+        }
+
+        .empty-state h3 {
+            font-size: 1.35rem;
+        }
+
+        .empty-state p {
+            margin-top: 10px;
+            color: var(--muted);
+            line-height: 1.7;
+            max-width: 60ch;
         }
 
         .message {
             display: flex;
-            margin-bottom: 1rem;
-            animation: slideIn 0.3s ease-out;
-        }
-
-        @keyframes slideIn {
-            from {
-                opacity: 0;
-                transform: translateY(10px);
-            }
-            to {
-                opacity: 1;
-                transform: translateY(0);
-            }
         }
 
         .message.user {
             justify-content: flex-end;
         }
 
-        .message.assistant {
+        .message.assistant,
+        .message.system {
             justify-content: flex-start;
         }
 
         .message-bubble {
-            max-width: 70%;
-            padding: 1rem;
-            border-radius: 1rem;
-            line-height: 1.5;
-            word-wrap: break-word;
+            max-width: min(760px, 88%);
+            padding: 16px 18px;
+            border-radius: 22px;
+            border: 1px solid var(--line);
+            background: #fff;
+            box-shadow: 0 12px 30px rgba(21, 34, 29, 0.05);
+            line-height: 1.7;
         }
 
         .message.user .message-bubble {
-            background: #2563eb;
-            color: white;
-            border-bottom-right-radius: 0.25rem;
+            background: linear-gradient(135deg, #15795e 0%, #1e8f70 100%);
+            color: #fff;
+            border: none;
+            border-bottom-right-radius: 8px;
         }
 
         .message.assistant .message-bubble {
-            background: #f3f4f6;
-            color: #000;
-            border-bottom-left-radius: 0.25rem;
+            border-bottom-left-radius: 8px;
         }
 
-        .message-image {
-            max-width: 100%;
-            max-height: 300px;
-            border-radius: 0.5rem;
-            margin-top: 0.5rem;
+        .message.system .message-bubble {
+            border-bottom-left-radius: 8px;
+            background: rgba(255, 255, 255, 0.78);
         }
 
-        /* Input Area */
-        .input-area {
-            padding: 1.5rem;
-            border-top: 1px solid #e5e7eb;
-            background: #fff;
+        .result-grid {
+            display: grid;
+            gap: 12px;
         }
 
-        .input-wrapper {
+        .result-top {
             display: flex;
-            gap: 1rem;
-            margin-bottom: 1rem;
+            justify-content: space-between;
+            gap: 10px;
+            align-items: center;
             flex-wrap: wrap;
-            align-items: center;
         }
 
-        .mode-dropdown {
+        .result-title {
+            font-size: 1rem;
+            font-weight: 700;
+        }
+
+        .urgency-badge {
+            padding: 6px 10px;
+            border-radius: 999px;
+            font-size: 0.82rem;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.04em;
+        }
+
+        .urgency-routine {
+            background: var(--accent-soft);
+            color: var(--accent-dark);
+        }
+
+        .urgency-soon {
+            background: rgba(179, 93, 23, 0.12);
+            color: var(--alert);
+        }
+
+        .urgency-urgent {
+            background: var(--danger-soft);
+            color: var(--danger);
+        }
+
+        .result-section {
+            padding-top: 10px;
+            border-top: 1px solid rgba(21, 34, 29, 0.08);
+        }
+
+        .result-section h4 {
+            font-size: 0.92rem;
+            margin-bottom: 6px;
+            text-transform: uppercase;
+            letter-spacing: 0.04em;
+            color: var(--muted);
+        }
+
+        .result-section p {
+            color: var(--ink);
+        }
+
+        .loading-row {
+            display: inline-flex;
+            align-items: center;
+            gap: 10px;
+            color: var(--muted);
+        }
+
+        .loading-dot {
+            width: 9px;
+            height: 9px;
+            border-radius: 50%;
+            background: var(--accent);
+            animation: pulse 1s infinite ease-in-out;
+        }
+
+        .loading-dot:nth-child(2) {
+            animation-delay: 0.16s;
+        }
+
+        .loading-dot:nth-child(3) {
+            animation-delay: 0.32s;
+        }
+
+        @keyframes pulse {
+            0%, 80%, 100% {
+                transform: scale(0.65);
+                opacity: 0.45;
+            }
+            40% {
+                transform: scale(1);
+                opacity: 1;
+            }
+        }
+
+        .composer {
+            padding: 20px 24px 24px;
+            border-top: 1px solid var(--line);
+            background: rgba(255, 255, 255, 0.82);
+            border-bottom-left-radius: 28px;
+            border-bottom-right-radius: 28px;
+        }
+
+        .composer-row {
             display: flex;
-            align-items: center;
-            gap: 0.5rem;
+            gap: 12px;
+            align-items: flex-start;
         }
 
-        .mode-dropdown label {
-            font-size: 0.875rem;
-            color: #666;
+        .input-stack {
+            flex: 1;
+            display: grid;
+            gap: 12px;
         }
 
-        .mode-dropdown select {
-            padding: 0.5rem 1rem;
-            border: 1px solid #d1d5db;
-            border-radius: 0.5rem;
-            font-size: 0.875rem;
-            cursor: pointer;
+        .toolbar {
+            display: flex;
+            justify-content: space-between;
+            gap: 12px;
+            flex-wrap: wrap;
+        }
+
+        .toolbar label {
+            font-size: 0.92rem;
+            color: var(--muted);
+        }
+
+        select {
+            margin-left: 8px;
+            border: 1px solid var(--line);
+            border-radius: 12px;
+            padding: 10px 12px;
             background: #fff;
+            color: var(--ink);
         }
 
-        .file-input-wrapper {
-            position: relative;
-            display: inline-block;
+        textarea {
+            width: 100%;
+            min-height: 120px;
+            resize: vertical;
+            border: 1px solid var(--line);
+            border-radius: 18px;
+            padding: 16px;
+            background: #fff;
+            color: var(--ink);
+            line-height: 1.6;
         }
 
-        .upload-button {
-            padding: 0.5rem 1rem;
-            background: #f3f4f6;
-            border: 1px solid #d1d5db;
-            border-radius: 0.5rem;
-            cursor: pointer;
-            font-size: 0.875rem;
-            transition: all 0.3s;
+        textarea:focus,
+        select:focus {
+            outline: none;
+            border-color: rgba(21, 121, 94, 0.48);
+            box-shadow: 0 0 0 4px rgba(21, 121, 94, 0.08);
         }
 
-        .upload-button:hover {
-            background: #e5e7eb;
+        .helper-row {
+            display: flex;
+            justify-content: space-between;
+            gap: 10px;
+            flex-wrap: wrap;
+            color: var(--muted);
+            font-size: 0.9rem;
         }
 
-        .upload-button.active {
-            background: #10b981;
-            color: white;
-            border-color: #10b981;
+        .upload-panel {
+            display: grid;
+            gap: 10px;
+            padding: 14px;
+            border-radius: 18px;
+            border: 1px dashed rgba(21, 34, 29, 0.18);
+            background: rgba(21, 121, 94, 0.05);
         }
 
-        #fileInput {
+        .upload-panel[hidden] {
             display: none;
         }
 
-        .chat-input-container {
+        .upload-header {
             display: flex;
-            gap: 0.75rem;
-            width: 100%;
+            justify-content: space-between;
+            gap: 12px;
+            align-items: center;
+            flex-wrap: wrap;
         }
 
-        .message-input {
-            flex: 1;
-            padding: 0.75rem 1rem;
-            border: 1px solid #d1d5db;
-            border-radius: 0.5rem;
-            font-size: 0.875rem;
-            font-family: inherit;
-            resize: none;
-            max-height: 100px;
+        .upload-copy strong {
+            display: block;
+            font-size: 0.95rem;
+            margin-bottom: 4px;
         }
 
-        .message-input:focus {
-            outline: none;
-            border-color: #2563eb;
-            box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.1);
+        .upload-copy span {
+            color: var(--muted);
+            font-size: 0.9rem;
+            line-height: 1.5;
+        }
+
+        .upload-button {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            border-radius: 14px;
+            border: 1px solid var(--line);
+            background: #fff;
+            color: var(--ink);
+            padding: 11px 14px;
+            cursor: pointer;
+            font-weight: 700;
+            transition: transform 0.18s ease, box-shadow 0.18s ease, border-color 0.18s ease;
+        }
+
+        .upload-button:hover {
+            transform: translateY(-1px);
+            border-color: rgba(21, 121, 94, 0.28);
+            box-shadow: 0 12px 24px rgba(21, 34, 29, 0.08);
+        }
+
+        .upload-status {
+            color: var(--muted);
+            font-size: 0.9rem;
+            line-height: 1.5;
+        }
+
+        .file-input {
+            display: none;
+        }
+
+        .attachment-chip {
+            display: inline-flex;
+            align-items: center;
+            margin-top: 10px;
+            padding: 8px 10px;
+            border-radius: 999px;
+            background: rgba(255, 255, 255, 0.18);
+            color: rgba(255, 255, 255, 0.95);
+            font-size: 0.84rem;
+            border: 1px solid rgba(255, 255, 255, 0.18);
         }
 
         .send-button {
-            padding: 0.75rem 1.5rem;
-            background: #2563eb;
-            color: white;
             border: none;
-            border-radius: 0.5rem;
+            border-radius: 18px;
+            min-width: 132px;
+            padding: 16px 18px;
+            background: var(--accent);
+            color: #fff;
+            font-weight: 700;
             cursor: pointer;
-            font-weight: 500;
-            transition: background 0.3s;
+            transition: transform 0.18s ease, background 0.18s ease, box-shadow 0.18s ease;
         }
 
         .send-button:hover:not(:disabled) {
-            background: #1d4ed8;
+            transform: translateY(-1px);
+            background: var(--accent-dark);
+            box-shadow: 0 14px 28px rgba(21, 34, 29, 0.12);
         }
 
         .send-button:disabled {
-            background: #d1d5db;
             cursor: not-allowed;
-            opacity: 0.5;
+            opacity: 0.6;
         }
 
-        .image-preview {
-            font-size: 0.875rem;
-            color: #10b981;
-            display: flex;
-            align-items: center;
-            gap: 0.5rem;
+        .error-banner {
+            display: none;
+            margin-top: 14px;
+            padding: 12px 14px;
+            border-radius: 14px;
+            border: 1px solid rgba(184, 56, 56, 0.18);
+            background: rgba(255, 244, 244, 0.9);
+            color: var(--danger);
         }
 
-        .empty-state {
-            display: flex;
-            flex-direction: column;
-            justify-content: center;
-            align-items: center;
-            height: 100%;
-            text-align: center;
-            color: #999;
+        @media (max-width: 980px) {
+            .shell {
+                grid-template-columns: 1fr;
+            }
+
+            .sidebar {
+                position: static;
+            }
+
+            .chat-panel {
+                min-height: auto;
+            }
         }
 
-        .empty-state-icon {
-            font-size: 3rem;
-            margin-bottom: 1rem;
-        }
+        @media (max-width: 640px) {
+            .page {
+                width: min(100% - 18px, 1180px);
+                padding-top: 14px;
+            }
 
-        .empty-state h2 {
-            font-size: 1.5rem;
-            margin-bottom: 0.5rem;
-        }
+            .sidebar,
+            .chat-header,
+            .chat-area,
+            .composer {
+                padding-left: 18px;
+                padding-right: 18px;
+            }
 
-        .empty-state p {
-            font-size: 0.875rem;
-        }
+            .composer-row {
+                flex-direction: column;
+            }
 
-        /* Scrollbar */
-        .chat-area::-webkit-scrollbar {
-            width: 8px;
-        }
-
-        .chat-area::-webkit-scrollbar-track {
-            background: #f1f5f9;
-        }
-
-        .chat-area::-webkit-scrollbar-thumb {
-            background: #cbd5e1;
-            border-radius: 4px;
-        }
-
-        .chat-area::-webkit-scrollbar-thumb:hover {
-            background: #94a3b8;
-        }
-
-        @media (max-width: 768px) {
-            .container {
-                border-radius: 0;
+            .send-button {
+                width: 100%;
             }
 
             .message-bubble {
-                max-width: 85%;
-            }
-
-            header {
-                padding: 1rem;
-            }
-
-            .input-area {
-                padding: 1rem;
-            }
-
-            .empty-state-icon {
-                font-size: 2rem;
-            }
-
-            .empty-state h2 {
-                font-size: 1.25rem;
+                max-width: 100%;
             }
         }
     </style>
 </head>
 <body>
-    <div class="container">
-        <!-- Header -->
-        <header>
-            <div class="header-left">
-                <button class="back-button" onclick="goHome()">← Back</button>
-                <div class="logo">AIcura</div>
-            </div>
-        </header>
-
-        <!-- Chat Area -->
-        <div class="chat-area" id="chatArea">
-            <div class="empty-state">
-                <div class="empty-state-icon">💬</div>
-                <h2>Welcome to AIcura</h2>
-                <p>Start a conversation about retinal health or upload an image to analyze</p>
-            </div>
-        </div>
-
-        <!-- Input Area -->
-        <div class="input-area">
-            <!-- Mode Selection -->
-            <div class="input-wrapper">
-                <div class="mode-dropdown">
-                    <label>Mode:</label>
-                    <select id="modeSelect" onchange="updateMode()">
-                        <option value="no-image">No Image (Education)</option>
-                        <option value="retina">Retina (Fundus)</option>
-                    </select>
+    <div class="page">
+        <div class="shell">
+            <aside class="panel sidebar">
+                <div class="brand-row">
+                    <div class="brand">AIcura</div>
+                    <a class="back-link" href="index.html">Back home</a>
                 </div>
 
-                <!-- Image Upload Button -->
-                <div class="file-input-wrapper">
-                    <button class="upload-button" id="uploadBtn" onclick="document.getElementById('fileInput').click()" disabled>📁 Upload Image</button>
-                    <input type="file" id="fileInput" accept="image/*" onchange="handleImageSelect()">
+                <h1>Live Q&amp;A</h1>
+                <p>
+                    The live feature today is question answering. Ask a health-related or
+                    retinal-related question and AIcura will return a plain-language educational
+                    response with a safety note.
+                </p>
+
+                <div class="status-block">
+                    <div class="status-label">Connection status</div>
+                    <div class="status-message" id="apiStatusMessage">Checking secure service connection...</div>
                 </div>
 
-                <!-- Image Preview -->
-                <div class="image-preview" id="imagePreview"></div>
-            </div>
+                <div class="note-block">
+                    <div class="status-label">Privacy note</div>
+                    <p class="status-message">
+                        AIcura does not store submitted questions on its own server. Requests are
+                        sent to the configured AI provider for processing, so avoid entering names
+                        or other personal identifiers. Responses are educational only and are not
+                        diagnoses.
+                    </p>
+                </div>
 
-            <!-- Chat Input -->
-            <div class="chat-input-container">
-                <textarea class="message-input" id="messageInput" placeholder="Ask about retinal health, diabetic retinopathy, or anything else..." rows="1"></textarea>
-                <button class="send-button" id="sendBtn" onclick="sendMessage()">Send</button>
-            </div>
+                <div class="note-block">
+                    <div class="status-label">Retinal scan module</div>
+                    <p class="status-message">
+                        Retinal image upload is part of the next phase. The planned image-analysis
+                        pipeline will estimate heart-health and diabetes-related factors from
+                        retinal scan patterns.
+                    </p>
+                    <button class="future-button" type="button" disabled>Retinal upload coming soon</button>
+                </div>
+
+                <div class="prompt-block">
+                    <div class="status-label">Sample prompts</div>
+                    <div class="prompt-list">
+                        <button class="prompt-chip" type="button" onclick="usePrompt('How can retinal scans be used to study diabetes-related patterns?', 'eye-health')">
+                            <strong>Retina and diabetes</strong>
+                            <span>Use the live Q&amp;A to explain part of the planned roadmap.</span>
+                        </button>
+                        <button class="prompt-chip" type="button" onclick="usePrompt('Can a retinal image reveal anything about heart health?', 'eye-health')">
+                            <strong>Retina and heart health</strong>
+                            <span>Ask about the kind of relationship your future AI module will explore.</span>
+                        </button>
+                        <button class="prompt-chip" type="button" onclick="usePrompt('What are common reasons for blurry vision, and when could it be urgent?', 'eye-health')">
+                            <strong>Blurry vision</strong>
+                            <span>A retinal and eye-health question with stronger safety guidance.</span>
+                        </button>
+                    </div>
+                </div>
+            </aside>
+
+            <main class="panel chat-panel">
+                <div class="chat-header">
+                    <div>
+                        <h2>AIcura Assistant</h2>
+                        <p>Live today: educational Q&amp;A. Next: retinal image analysis for heart-health and diabetes-related factors.</p>
+                    </div>
+                    <div class="status-badge" id="statusBadge">Connecting...</div>
+                </div>
+
+                <div class="chat-area" id="chatArea">
+                    <section class="empty-state" id="emptyState">
+                        <h3>Welcome to AIcura</h3>
+                        <p>
+                            The current live feature is health and retinal-related question
+                            answering. Retinal image upload for heart-health and diabetes-related
+                            analysis is planned for a future phase.
+                        </p>
+                    </section>
+                </div>
+
+                <div class="composer">
+                    <div class="composer-row">
+                        <div class="input-stack">
+                            <div class="toolbar">
+                                <label for="topicSelect">
+                                    Topic focus
+                                    <select id="topicSelect">
+                                        <option value="general-health">General health education</option>
+                                        <option value="eye-health">Retinal scan image</option>
+                                    </select>
+                                </label>
+                                <div class="helper-row">
+                                    <span id="charCount">0 / 500 characters</span>
+                                    <span>Educational use only</span>
+                                </div>
+                            </div>
+
+                            <div class="upload-panel" id="uploadPanel" hidden>
+                                <div class="upload-header">
+                                    <div class="upload-copy">
+                                        <strong>Upload retinal scan image</strong>
+                                        <span>Select a retinal image only when using the retinal scan image mode.</span>
+                                    </div>
+                                    <label class="upload-button" for="retinalImageInput">Choose image</label>
+                                </div>
+                                <input class="file-input" id="retinalImageInput" type="file" accept="image/png,image/jpeg,image/jpg,image/webp">
+                                <div class="upload-status" id="uploadStatus">No retinal scan image selected yet.</div>
+                            </div>
+
+                            <textarea
+                                id="messageInput"
+                                placeholder="Example: How can retinal scans be related to diabetes or heart-health insights?"
+                                maxlength="500"
+                            ></textarea>
+
+                            <div class="helper-row">
+                                <span>Live now: Q&amp;A. Planned next: retinal scan upload and image analysis.</span>
+                                <span>Shift + Enter for a new line</span>
+                            </div>
+                        </div>
+
+                        <button class="send-button" id="sendButton" type="button" onclick="sendMessage()">Send question</button>
+                    </div>
+
+                    <div class="error-banner" id="errorBanner"></div>
+                </div>
+            </main>
         </div>
     </div>
 
     <script>
-        let selectedImage = null;
-        let selectedImagePreview = null;
+        const messageInput = document.getElementById("messageInput");
+        const sendButton = document.getElementById("sendButton");
+        const chatArea = document.getElementById("chatArea");
+        const emptyState = document.getElementById("emptyState");
+        const topicSelect = document.getElementById("topicSelect");
+        const errorBanner = document.getElementById("errorBanner");
+        const apiStatusMessage = document.getElementById("apiStatusMessage");
+        const statusBadge = document.getElementById("statusBadge");
+        const charCount = document.getElementById("charCount");
+        const uploadPanel = document.getElementById("uploadPanel");
+        const retinalImageInput = document.getElementById("retinalImageInput");
+        const uploadStatus = document.getElementById("uploadStatus");
 
-        function updateMode() {
-            const mode = document.getElementById('modeSelect').value;
-            const uploadBtn = document.getElementById('uploadBtn');
-            
-            if (mode === 'retina') {
-                uploadBtn.disabled = false;
-            } else {
-                uploadBtn.disabled = true;
-                selectedImage = null;
-                selectedImagePreview = null;
-                document.getElementById('imagePreview').innerHTML = '';
-                document.getElementById('fileInput').value = '';
-            }
-        }
+        let isLoading = false;
+        let selectedRetinalImageName = "";
 
-        function handleImageSelect() {
-            const file = document.getElementById('fileInput').files[0];
-            if (file) {
-                const reader = new FileReader();
-                reader.onload = function(e) {
-                    selectedImage = file;
-                    selectedImagePreview = e.target.result;
-                    document.getElementById('imagePreview').innerHTML = '✓ Image ready';
-                };
-                reader.readAsDataURL(file);
-            }
-        }
+        updateTopicMode();
+        updateComposerState();
+        checkBackendStatus();
 
-        function sendMessage() {
-            const messageInput = document.getElementById('messageInput');
-            const message = messageInput.value.trim();
-
-            if (!message && !selectedImage) return;
-
-            const chatArea = document.getElementById('chatArea');
-
-            // Remove empty state if exists
-            const emptyState = chatArea.querySelector('.empty-state');
-            if (emptyState) {
-                emptyState.remove();
-            }
-
-            // Add user message
-            const userMessageDiv = document.createElement('div');
-            userMessageDiv.className = 'message user';
-            
-            let messageHTML = `<div class="message-bubble">${escapeHtml(message)}`;
-            
-            if (selectedImagePreview) {
-                messageHTML += `<img src="${selectedImagePreview}" class="message-image">`;
-            }
-            
-            messageHTML += `</div>`;
-            userMessageDiv.innerHTML = messageHTML;
-            chatArea.appendChild(userMessageDiv);
-
-            // Clear input
-            messageInput.value = '';
-            messageInput.style.height = 'auto';
-            selectedImage = null;
-            selectedImagePreview = null;
-            document.getElementById('imagePreview').innerHTML = '';
-            document.getElementById('fileInput').value = '';
-
-            // Auto scroll
-            chatArea.scrollTop = chatArea.scrollHeight;
-
-            // Simulate AI response
-            setTimeout(() => {
-                const aiMessageDiv = document.createElement('div');
-                aiMessageDiv.className = 'message assistant';
-                aiMessageDiv.innerHTML = `<div class="message-bubble">
-                    Thanks for your message!
-                    This feature is under development and will be available soon.
-                </div>`;
-                chatArea.appendChild(aiMessageDiv);
-                chatArea.scrollTop = chatArea.scrollHeight;
-            }, 500);
-
-            // Focus back to input
-            messageInput.focus();
-        }
-
-        function escapeHtml(text) {
-            const div = document.createElement('div');
-            div.textContent = text;
-            return div.innerHTML;
-        }
-
-        function goHome() {
-            window.location.href = 'index.html';
-        }
-
-        // Auto-resize textarea
-        document.getElementById('messageInput').addEventListener('input', function() {
-            this.style.height = 'auto';
-            this.style.height = Math.min(this.scrollHeight, 100) + 'px';
-        });
-
-        // Send on Enter, Shift+Enter for new line
-        document.getElementById('messageInput').addEventListener('keypress', function(e) {
-            if (e.key === 'Enter' && !e.shiftKey) {
-                e.preventDefault();
+        messageInput.addEventListener("input", updateComposerState);
+        topicSelect.addEventListener("change", updateTopicMode);
+        retinalImageInput.addEventListener("change", handleRetinalImageChange);
+        messageInput.addEventListener("keydown", (event) => {
+            if (event.key === "Enter" && !event.shiftKey) {
+                event.preventDefault();
                 sendMessage();
             }
         });
 
-        // Update send button state
-        function updateSendButton() {
-            const messageInput = document.getElementById('messageInput');
-            const sendBtn = document.getElementById('sendBtn');
-            sendBtn.disabled = !messageInput.value.trim() && !selectedImage;
+        function usePrompt(text, topic) {
+            topicSelect.value = topic;
+            updateTopicMode();
+            messageInput.value = text;
+            updateComposerState();
+            messageInput.focus();
         }
 
-        document.getElementById('messageInput').addEventListener('input', updateSendButton);
+        function updateTopicMode() {
+            const isRetinalMode = topicSelect.value === "eye-health";
+
+            uploadPanel.hidden = !isRetinalMode;
+
+            if (isRetinalMode) {
+                messageInput.placeholder = "Example: What can a retinal scan image show about diabetes or heart-health related changes?";
+                uploadStatus.textContent = selectedRetinalImageName
+                    ? `${selectedRetinalImageName} selected. This upload option is shown for the retinal workflow mode.`
+                    : "No retinal scan image selected yet.";
+            } else {
+                messageInput.placeholder = "Example: What are common causes of dry eyes, and when should someone seek care?";
+                retinalImageInput.value = "";
+                selectedRetinalImageName = "";
+                uploadStatus.textContent = "No retinal scan image selected yet.";
+            }
+        }
+
+        function handleRetinalImageChange() {
+            const file = retinalImageInput.files[0];
+
+            if (!file) {
+                selectedRetinalImageName = "";
+                uploadStatus.textContent = "No retinal scan image selected yet.";
+                return;
+            }
+
+            selectedRetinalImageName = file.name;
+            uploadStatus.textContent = `${file.name} selected. This upload option is shown for the retinal workflow mode.`;
+        }
+
+        async function checkBackendStatus() {
+            try {
+                const response = await fetch("/api/health");
+                const data = await response.json();
+
+                if (!response.ok) {
+                    throw new Error(data.error || "The backend health check failed.");
+                }
+
+                if (data.apiConfigured) {
+                    apiStatusMessage.textContent = "Service connected and ready for questions.";
+                    statusBadge.textContent = "Connected";
+                } else {
+                    apiStatusMessage.textContent = "Service is online, but AI access is not configured yet.";
+                    apiStatusMessage.classList.add("error");
+                    statusBadge.textContent = "Configuration needed";
+                }
+            } catch (_error) {
+                apiStatusMessage.textContent = "Unable to reach the service right now. Please make sure the server is running.";
+                apiStatusMessage.classList.add("error");
+                statusBadge.textContent = "Unavailable";
+            }
+        }
+
+        async function sendMessage() {
+            const question = messageInput.value.trim();
+
+            hideError();
+
+            if (isLoading) {
+                return;
+            }
+
+            if (!question) {
+                showError("Please enter a health-related question before submitting.");
+                messageInput.focus();
+                return;
+            }
+
+            if (question.length < 5) {
+                showError("Please enter a little more detail so the response can be meaningful.");
+                messageInput.focus();
+                return;
+            }
+
+            removeEmptyState();
+            const attachmentName = selectedRetinalImageName;
+            appendUserMessage(question, attachmentName);
+            const loadingNode = appendLoadingMessage();
+
+            isLoading = true;
+            messageInput.value = "";
+            retinalImageInput.value = "";
+            selectedRetinalImageName = "";
+            updateTopicMode();
+            updateComposerState();
+
+            try {
+                const response = await fetch("/api/ask", {
+                    method: "POST",
+                    headers: {
+                        "Content-Type": "application/json"
+                    },
+                    body: JSON.stringify({
+                        question,
+                        topic: topicSelect.value
+                    })
+                });
+
+                const data = await response.json();
+
+                if (!response.ok) {
+                    throw new Error(data.error || "The AI request failed.");
+                }
+
+                loadingNode.innerHTML = buildAssistantCard(data);
+            } catch (error) {
+                loadingNode.innerHTML = `<div class="message-bubble"><strong>Request failed.</strong><br>${escapeHtml(error.message)}</div>`;
+                showError(error.message);
+            } finally {
+                isLoading = false;
+                updateComposerState();
+                messageInput.focus();
+                scrollToBottom();
+            }
+        }
+
+        function appendUserMessage(text, attachmentName) {
+            const message = document.createElement("div");
+            message.className = "message user";
+            let messageHtml = `<div class="message-bubble">${formatParagraphs(text)}`;
+
+            if (attachmentName) {
+                messageHtml += `<div class="attachment-chip">Retinal scan image: ${escapeHtml(attachmentName)}</div>`;
+            }
+
+            messageHtml += `</div>`;
+            message.innerHTML = messageHtml;
+            chatArea.appendChild(message);
+            scrollToBottom();
+        }
+
+        function appendLoadingMessage() {
+            const message = document.createElement("div");
+            message.className = "message assistant";
+            message.innerHTML = `
+                <div class="message-bubble">
+                    <div class="loading-row">
+                        <div class="loading-dot"></div>
+                        <div class="loading-dot"></div>
+                        <div class="loading-dot"></div>
+                        <span>Preparing educational response...</span>
+                    </div>
+                </div>
+            `;
+            chatArea.appendChild(message);
+            scrollToBottom();
+            return message;
+        }
+
+        function buildAssistantCard(data) {
+            const urgency = normalizeUrgency(data.urgency);
+            const badgeClass = `urgency-badge urgency-${urgency}`;
+
+            return `
+                <div class="message-bubble">
+                    <div class="result-grid">
+                        <div class="result-top">
+                            <div class="result-title">Educational response</div>
+                            <span class="${badgeClass}">${escapeHtml(getCareLabel(urgency))}</span>
+                        </div>
+                        <div class="result-section">
+                            <h4>Overview</h4>
+                            <p>${formatParagraphs(data.answer)}</p>
+                        </div>
+                        <div class="result-section">
+                            <h4>Why this may matter</h4>
+                            <p>${formatParagraphs(data.explanation)}</p>
+                        </div>
+                        <div class="result-section">
+                            <h4>Important note</h4>
+                            <p>${formatParagraphs(data.disclaimer)}</p>
+                        </div>
+                    </div>
+                </div>
+            `;
+        }
+
+        function normalizeUrgency(value) {
+            if (value === "soon" || value === "urgent") {
+                return value;
+            }
+
+            return "routine";
+        }
+
+        function getCareLabel(value) {
+            if (value === "urgent") {
+                return "Prompt care";
+            }
+
+            if (value === "soon") {
+                return "Follow up soon";
+            }
+
+            return "General guidance";
+        }
+
+        function formatParagraphs(text) {
+            return escapeHtml(String(text || "")).replace(/\n/g, "<br>");
+        }
+
+        function escapeHtml(text) {
+            const div = document.createElement("div");
+            div.textContent = text;
+            return div.innerHTML;
+        }
+
+        function showError(message) {
+            errorBanner.style.display = "block";
+            errorBanner.textContent = message;
+        }
+
+        function hideError() {
+            errorBanner.style.display = "none";
+            errorBanner.textContent = "";
+        }
+
+        function removeEmptyState() {
+            if (emptyState && emptyState.parentNode) {
+                emptyState.parentNode.removeChild(emptyState);
+            }
+        }
+
+        function scrollToBottom() {
+            chatArea.scrollTop = chatArea.scrollHeight;
+        }
+
+        function updateComposerState() {
+            const length = messageInput.value.length;
+            charCount.textContent = `${length} / 500 characters`;
+            sendButton.disabled = isLoading || !messageInput.value.trim();
+            sendButton.textContent = isLoading ? "Sending..." : "Send question";
+        }
     </script>
 </body>
 </html>

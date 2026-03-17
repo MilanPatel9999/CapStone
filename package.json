@@ -1,11 +1,11 @@
 {
   "name": "aicura",
   "version": "1.0.0",
-  "description": "AIcura - Educational Retinal Health Analysis Prototype",
-  "main": "index.html",
+  "description": "AIcura - Educational healthcare AI API prototype",
+  "main": "server.js",
   "scripts": {
-    "start": "python -m http.server 8000",
-    "dev": "npx http-server -p 8000 -o"
+    "start": "node server.js",
+    "dev": "node server.js"
   },
   "keywords": ["healthcare", "retinal", "education", "ai"],
   "author": "CapStone Team",
