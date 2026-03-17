@@ -63,20 +63,7 @@ sequenceDiagram
     F-->>U: Render result or error
 ```
 
-## Local Setup
 
-1. Copy `.env.example` to `.env`.
-2. Add a valid `OPENAI_API_KEY`.
-3. Run `npm start`.
-4. Open `http://localhost:3000`.
-
-Example `.env`:
-
-```env
-OPENAI_API_KEY=your_openai_api_key_here
-OPENAI_MODEL=gpt-4o-mini
-PORT=3000
-```
 
 ## Demo Script
 
@@ -94,18 +81,3 @@ PORT=3000
 - Can a retinal image reveal anything about heart health?
 - What are common reasons for blurry vision, and when could it be urgent?
 
-## Project Structure
-
-```text
-CapStone/
-  index.html
-  chat.html
-  server.js
-  package.json
-  .env.example
-  README.md
-```
-
-## Important Note
-
-AIcura is for educational purposes only. It does not diagnose medical conditions, prescribe treatment, or replace licensed healthcare professionals. The current app does not store submitted questions on the AIcura server, and retinal images should be treated as sensitive medical data.
