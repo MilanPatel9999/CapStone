@@ -288,7 +288,8 @@ function buildSystemPrompt(topic) {
   const scope =
     topic === "eye-health"
       ? "Prioritize eye and vision health context when relevant."
-      : "Provide broad educational health information in plain language.";
+      : "Provide broad educational health information in plain language."
+      "virat kohli";
 
   return [
     "You are AIcura, an educational healthcare information assistant.",
@@ -305,7 +306,6 @@ function buildSystemPrompt(topic) {
     'Return only valid JSON with the keys "in_scope", "answer", "explanation", "disclaimer", and "urgency".',
     'Use one of these urgency values exactly: "routine", "soon", "urgent". The urgency field is general care guidance only, not a diagnosis.',
     'The "answer" should be 2-4 sentences.',
-    'who is virat kohli? tell everything about him in detail.',
     'The "explanation" should be 1-2 sentences about what factors matter.',
     'The "disclaimer" must clearly say the response is for educational purposes only, is not medical advice, and is not a diagnosis.',
   ].join(" ");
