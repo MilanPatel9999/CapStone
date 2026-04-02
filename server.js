@@ -1,3 +1,4 @@
+require('dotenv').config();
 const http = require("http");
 const fs = require("fs");
 const path = require("path");
@@ -5,10 +6,8 @@ const path = require("path");
 const ROOT_DIR = __dirname;
 loadEnvFile();
 
-const PORT = Number(process.env.PORT) || 3000;
+const PORT = Number(process.env.PORT) || 3001;
 const OPENAI_MODEL = process.env.OPENAI_MODEL || "gpt-4o-mini";
-const RETFOUND_SERVICE_URL = process.env.RETFOUND_SERVICE_URL || "http://127.0.0.1:8001";
-const RETFOUND_REQUEST_TIMEOUT_MS = Number(process.env.RETFOUND_REQUEST_TIMEOUT_MS) || 90_000;
 const STATIC_ROUTES = {
   "/": "index.html",
   "/index.html": "index.html",
@@ -34,12 +33,10 @@ const server = http.createServer(async (req, res) => {
     const { pathname } = requestUrl;
 
     if (req.method === "GET" && pathname === "/api/health") {
-      const retinalService = await getRetinalServiceHealth();
       return sendJson(res, 200, {
         status: "ok",
         apiConfigured: Boolean(process.env.OPENAI_API_KEY),
         model: OPENAI_MODEL,
-        retinalService,
       });
     }
 
@@ -47,16 +44,14 @@ const server = http.createServer(async (req, res) => {
       const body = await readJsonBody(req);
       const question = typeof body.question === "string" ? body.question.trim() : "";
       const topic = normalizeTopic(body.topic);
-      const retinalImage = normalizeRetinalImage(body.retinalImage);
-      const hasRetinalWorkflowInput = topic === "eye-health" && Boolean(retinalImage);
 
-      if (!question && !hasRetinalWorkflowInput) {
+      if (!question) {
         return sendJson(res, 400, {
-          error: "Please enter a health-related question or upload a retinal scan image before submitting.",
+          error: "Please enter a health-related question before submitting.",
         });
       }
 
-      if (question && question.length < 5 && !hasRetinalWorkflowInput) {
+      if (question.length < 5) {
         return sendJson(res, 400, {
           error: "Please enter a little more detail so the AI can respond helpfully.",
         });
@@ -68,9 +63,7 @@ const server = http.createServer(async (req, res) => {
         });
       }
 
-      const effectiveQuestion = buildEffectiveQuestion(question, topic, retinalImage);
-
-      if (!hasRetinalWorkflowInput && !looksHealthRelated(effectiveQuestion)) {
+      if (!looksHealthRelated(question)) {
         return sendJson(res, 200, {
           ...outOfScopeResponse(),
           topic,
@@ -79,28 +72,62 @@ const server = http.createServer(async (req, res) => {
         });
       }
 
-      const retinalAnalysis =
-        hasRetinalWorkflowInput
-          ? await callRetinalService(effectiveQuestion, topic, retinalImage)
-          : null;
-      if (retinalAnalysis && retinalAnalysis.isRetinalImage === false) {
-        return sendJson(res, 200, {
-          ...buildInvalidRetinalImageResponse(),
-          topic,
-          model: OPENAI_MODEL,
-          inScope: true,
-          retinalAnalysis,
-        });
-      }
-
-      const aiQuestion = buildQuestionWithRetinalContext(effectiveQuestion, topic, retinalAnalysis);
-      const result = await callOpenAI(aiQuestion, topic);
-
+      const result = await callOpenAI(question, topic);
       return sendJson(res, 200, {
         ...result,
         topic,
         model: OPENAI_MODEL,
-        retinalAnalysis,
+      });
+    }
+
+    if (req.method === "POST" && pathname === "/api/retina-scan") {
+      // Allow larger payloads for retina image uploads (base64 JSON payloads can be several MB)
+      const body = await readJsonBody(req, 15_000_000);
+      const image = typeof body.image === "string" ? body.image.trim() : "";
+      const question = typeof body.question === "string" ? body.question.trim() : "";
+
+      if (!image) {
+        return sendJson(res, 400, {
+          error: "Please upload a retinal fundus image before submitting.",
+        });
+      }
+
+      const retinaResult = await callRetinaModel(image);
+
+      let educationalInfo = buildRetinaFallbackGuidance(retinaResult);
+
+      if (question && looksHealthRelated(question) && process.env.OPENAI_API_KEY) {
+        try {
+          const prompt = `A retinal screening model returned:
+        Prediction: ${retinaResult.prediction}
+        Confidence: ${retinaResult.confidenceDisplay || retinaResult.confidence}
+        Suggested guidance: ${retinaResult.suggestion}
+        Screening summary: ${retinaResult.presentationInfo?.screeningSummary || "Not provided"}
+        Prototype note: ${retinaResult.presentationInfo?.prototypeNote || "Not provided"}
+        Situation summary: ${retinaResult.patientGuidance?.situation || "Not provided"}
+        Why this may matter: ${retinaResult.patientGuidance?.whyItMatters || "Not provided"}
+        Follow-up urgency: ${retinaResult.patientGuidance?.urgency || "routine"}
+        What can be done: ${Array.isArray(retinaResult.patientGuidance?.whatCanBeDone) ? retinaResult.patientGuidance.whatCanBeDone.join("; ") : "Not provided"}
+        Monitoring tips: ${Array.isArray(retinaResult.presentationInfo?.monitoringTips) ? retinaResult.presentationInfo.monitoringTips.join("; ") : "Not provided"}
+        Questions to ask: ${Array.isArray(retinaResult.presentationInfo?.questionsToAsk) ? retinaResult.presentationInfo.questionsToAsk.join("; ") : "Not provided"}
+        Warning signs: ${Array.isArray(retinaResult.patientGuidance?.warningSigns) ? retinaResult.patientGuidance.warningSigns.join("; ") : "Not provided"}
+
+        User question: ${question}
+
+        Give a short educational explanation of what this screening result may mean, what general next steps people often consider, and when to seek professional eye care. Do not diagnose.`;
+          const aiGuidance = await callOpenAI(prompt, "eye-health");
+          educationalInfo = {
+            ...educationalInfo,
+            ...aiGuidance,
+            urgency: mergeUrgency(educationalInfo.urgency, aiGuidance.urgency),
+          };
+        } catch (_error) {}
+      }
+
+      return sendJson(res, 200, {
+        mode: "retina-scan",
+        retina: retinaResult,
+        guidance: educationalInfo,
       });
     }
 
@@ -108,18 +135,27 @@ const server = http.createServer(async (req, res) => {
       return serveFile(res, path.join(ROOT_DIR, STATIC_ROUTES[pathname]));
     }
 
-    if (req.method === "GET") {
-      const staticFilePath = resolveStaticFilePath(pathname);
-
-      if (staticFilePath) {
-        return serveFile(res, staticFilePath);
-      }
-    }
-
     if (req.method === "GET" && pathname === "/favicon.ico") {
       res.writeHead(204);
       res.end();
       return;
+    }
+
+
+    // Attempt to serve static assets directly from the project directory (css, js, images, etc.)
+    if (req.method === "GET") {
+      const assetRelative = pathname.replace(/^\/+/, "");
+      const assetPath = path.join(ROOT_DIR, assetRelative);
+      const resolvedAsset = path.resolve(assetPath);
+      const resolvedRoot = path.resolve(ROOT_DIR);
+
+      if (
+        resolvedAsset.startsWith(resolvedRoot) &&
+        fs.existsSync(resolvedAsset) &&
+        fs.statSync(resolvedAsset).isFile()
+      ) {
+        return serveFile(res, resolvedAsset);
+      }
     }
 
     sendJson(res, 404, { error: "Route not found." });
@@ -194,44 +230,37 @@ function serveFile(res, filePath) {
   });
 }
 
-function resolveStaticFilePath(requestPath) {
-  const decodedPath = decodeURIComponent(requestPath || "/");
-  const relativePath = decodedPath.replace(/^\/+/, "");
-
-  if (!relativePath) {
-    return null;
-  }
-
-  const resolvedPath = path.resolve(ROOT_DIR, relativePath);
-
-  if (!resolvedPath.startsWith(ROOT_DIR)) {
-    return null;
-  }
-
-  if (!fs.existsSync(resolvedPath)) {
-    return null;
-  }
-
-  const fileStats = fs.statSync(resolvedPath);
-  return fileStats.isFile() ? resolvedPath : null;
-}
-
-function readJsonBody(req) {
+function readJsonBody(req, maxChars = 1_000_000) {
   return new Promise((resolve, reject) => {
     let rawBody = "";
+    let finished = false;
 
-    req.on("data", (chunk) => {
+    function cleanup() {
+      req.removeListener("data", onData);
+      req.removeListener("end", onEnd);
+      req.removeListener("error", onError);
+      req.removeListener("close", onClose);
+    }
+
+    function onData(chunk) {
+      if (finished) return;
       rawBody += chunk;
 
-      if (rawBody.length > 10_000_000) {
+      if (rawBody.length > maxChars) {
+        finished = true;
+        cleanup();
         const error = new Error("Request body is too large.");
         error.statusCode = 413;
         reject(error);
-        req.destroy();
+        return;
       }
-    });
+    }
 
-    req.on("end", () => {
+    function onEnd() {
+      if (finished) return;
+      finished = true;
+      cleanup();
+
       if (!rawBody) {
         resolve({});
         return;
@@ -244,63 +273,33 @@ function readJsonBody(req) {
         error.statusCode = 400;
         reject(error);
       }
-    });
+    }
 
-    req.on("error", (error) => {
+    function onError(err) {
+      if (finished) return;
+      finished = true;
+      cleanup();
+      reject(err);
+    }
+
+    function onClose() {
+      if (finished) return;
+      finished = true;
+      cleanup();
+      const error = new Error("Connection closed before body was fully received.");
+      error.statusCode = 499;
       reject(error);
-    });
+    }
+
+    req.on("data", onData);
+    req.on("end", onEnd);
+    req.on("error", onError);
+    req.on("close", onClose);
   });
 }
 
 function normalizeTopic(topic) {
   return topic === "eye-health" ? "eye-health" : "general-health";
-}
-
-function buildEffectiveQuestion(question, topic, retinalImage) {
-  const trimmedQuestion = typeof question === "string" ? question.trim() : "";
-
-  if (topic !== "eye-health" || !retinalImage) {
-    return trimmedQuestion;
-  }
-
-  const retinalContext =
-    'The user uploaded an image in retinal scan mode. Respond only with educational, non-diagnostic information about retinal scans, eye health, heart-health related retinal patterns, diabetes-related retinal patterns, or safe next steps. If the typed question is vague, interpret it as a request for educational retinal-image guidance.';
-
-  if (!trimmedQuestion) {
-    return `${retinalContext} Explain what a retinal-analysis workflow may look for in an uploaded scan and remind the user that image-based output is educational only.`;
-  }
-
-  return `${trimmedQuestion}\n\n${retinalContext}`;
-}
-
-function normalizeRetinalImage(retinalImage) {
-  if (!retinalImage || typeof retinalImage !== "object") {
-    return null;
-  }
-
-  const name = typeof retinalImage.name === "string" ? retinalImage.name.trim() : "";
-  const mimeType = typeof retinalImage.mimeType === "string" ? retinalImage.mimeType.trim() : "";
-  const dataUrl = typeof retinalImage.dataUrl === "string" ? retinalImage.dataUrl.trim() : "";
-
-  if (!dataUrl) {
-    return null;
-  }
-
-  if (!/^data:image\/(png|jpeg|jpg|webp);base64,/i.test(dataUrl)) {
-    return null;
-  }
-
-  if (dataUrl.length > 8_000_000) {
-    const error = new Error("Please upload a retinal image under roughly 6 MB.");
-    error.statusCode = 413;
-    throw error;
-  }
-
-  return {
-    name: name || "uploaded-retinal-image",
-    mimeType: mimeType || "image/jpeg",
-    dataUrl,
-  };
 }
 
 async function callOpenAI(question, topic) {
@@ -402,9 +401,6 @@ function buildSystemPrompt(topic) {
     "Do not diagnose, prescribe treatment, confirm a condition, or present yourself as a medical professional.",
     "Never state or imply that the user definitely has a condition.",
     'Use careful phrasing such as "possible explanations include", "this can sometimes be associated with", or "people may experience this when".',
-    "If the user message includes retinal-model context, treat it as an educational screening signal only and never as a confirmed finding.",
-    "If a retinal model output label is provided, do not say the person has that disease or stage. Instead say the model flagged a pattern or produced a screening label that would still need clinician review.",
-    "Never restate diabetic retinopathy, heart risk, or any retinal-model output as a diagnosis.",
     "If symptoms suggest an emergency, give general safety guidance to seek urgent medical attention immediately.",
     "Keep the answer concise, practical, and understandable for non-experts.",
     'Return only valid JSON with the keys "in_scope", "answer", "explanation", "disclaimer", and "urgency".',
@@ -413,194 +409,6 @@ function buildSystemPrompt(topic) {
     'The "explanation" should be 1-2 sentences about what factors matter.',
     'The "disclaimer" must clearly say the response is for educational purposes only, is not medical advice, and is not a diagnosis.',
   ].join(" ");
-}
-
-function buildQuestionWithRetinalContext(question, topic, retinalAnalysis) {
-  if (topic !== "eye-health" || !retinalAnalysis || retinalAnalysis.isRetinalImage === false) {
-    return question;
-  }
-
-  const contextParts = [
-    "Retinal analysis context:",
-    retinalAnalysis.summary || "",
-  ];
-
-  if (retinalAnalysis.validation) {
-    contextParts.push(
-      `Validation accepted: ${retinalAnalysis.validation.accepted ? "yes" : "no"}.`,
-      `Retinal confidence: ${retinalAnalysis.validation.retinalScore ?? "unavailable"}.`,
-    );
-  }
-
-  if (retinalAnalysis.diabetesAnalysis?.topPrediction) {
-    const diabetesSignalGuidance = describeScreeningSignalGuidance(
-      "diabetes",
-      retinalAnalysis.diabetesAnalysis.topPrediction,
-      retinalAnalysis.diabetesAnalysis.confidenceBand,
-    );
-    contextParts.push(...diabetesSignalGuidance);
-  }
-
-  if (retinalAnalysis.heartAnalysis?.topPrediction) {
-    const heartSignalGuidance = describeScreeningSignalGuidance(
-      "heart",
-      retinalAnalysis.heartAnalysis.topPrediction,
-      retinalAnalysis.heartAnalysis.confidenceBand,
-    );
-    contextParts.push(...heartSignalGuidance);
-  } else if (retinalAnalysis.heartAnalysis?.status === "pending_checkpoint") {
-    contextParts.push(
-      "Heart-specific RETFound checkpoint is not configured yet.",
-      "Do not describe any heart-risk result for this upload because no heart model output exists.",
-    );
-  }
-
-  return `${question}\n\n${contextParts.join(" ")}`;
-}
-
-function describeScreeningSignalGuidance(domain, prediction, confidenceBand) {
-  if (!prediction) {
-    return [];
-  }
-
-  const label = prediction.label;
-  const confidence = prediction.confidence;
-
-  if (confidenceBand === "low") {
-    return [
-      `${capitalize(domain)} screening output was low confidence: top label ${label} at ${confidence}.`,
-      `Do not restate "${label}" as a likely ${domain} stage or finding in the user-facing answer.`,
-      "Say only that the screening branch produced an uncertain result that may warrant professional review.",
-    ];
-  }
-
-  if (confidenceBand === "tentative") {
-    return [
-      `${capitalize(domain)} screening output was tentative: top label ${label} at ${confidence}.`,
-      `Do not say the user has a confirmed ${domain} condition or stage.`,
-      "Present it only as a cautious screening signal that still needs clinician review.",
-    ];
-  }
-
-  return [
-    `${capitalize(domain)} screening output label (not a diagnosis): ${label} at ${confidence}.`,
-    `Do not say the user has a confirmed ${domain} condition or stage.`,
-    "Present it only as a screening signal that may warrant professional review.",
-  ];
-}
-
-function capitalize(value) {
-  if (!value) {
-    return "";
-  }
-
-  return value.charAt(0).toUpperCase() + value.slice(1);
-}
-
-async function getRetinalServiceHealth() {
-  try {
-    const response = await fetch(`${RETFOUND_SERVICE_URL}/health`, {
-      signal: AbortSignal.timeout(1200),
-    });
-
-    if (!response.ok) {
-      throw new Error(`Retinal service health check failed with status ${response.status}.`);
-    }
-
-    const data = await response.json();
-    return {
-      configured: Boolean(RETFOUND_SERVICE_URL),
-      reachable: true,
-      requestedMode: data.requestedMode || "demo",
-      activeMode: data.activeMode || "demo",
-      modelLoaded: Boolean(data.modelLoaded),
-      modelName: data.modelName || "",
-      validatorEnabled: Boolean(data.validatorEnabled),
-      diabetesEnabled: Boolean(data.diabetesEnabled),
-      diabetesModelLoaded: Boolean(data.diabetesModelLoaded),
-    };
-  } catch (_error) {
-    return {
-      configured: Boolean(RETFOUND_SERVICE_URL),
-      reachable: false,
-      requestedMode: "unknown",
-      activeMode: "unavailable",
-      modelLoaded: false,
-      modelName: "",
-      validatorEnabled: false,
-      diabetesEnabled: false,
-      diabetesModelLoaded: false,
-    };
-  }
-}
-
-async function callRetinalService(question, topic, retinalImage) {
-  try {
-    const response = await fetch(`${RETFOUND_SERVICE_URL}/analyze`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      signal: AbortSignal.timeout(RETFOUND_REQUEST_TIMEOUT_MS),
-      body: JSON.stringify({
-        question,
-        topic,
-        image_name: retinalImage.name,
-        image_data_url: retinalImage.dataUrl,
-      }),
-    });
-
-    const rawText = await response.text();
-    let data = null;
-
-    if (rawText) {
-      try {
-        data = JSON.parse(rawText);
-      } catch (_error) {
-        throw new Error(rawText || "Retinal image analysis failed.");
-      }
-    }
-
-    if (!response.ok) {
-      throw new Error(data?.detail || data?.error || "Retinal image analysis failed.");
-    }
-
-    return data;
-  } catch (error) {
-    return buildRetinalServiceFallback(error);
-  }
-}
-
-function buildRetinalServiceFallback(error) {
-  return {
-    analyzerName: "RETFound service",
-    requestedMode: "unknown",
-    activeMode: "unavailable",
-    modelLoaded: false,
-    modelName: "",
-    summary:
-      "A retinal image was uploaded, but the retinal-analysis service could not be reached. The question-and-answer flow still completed without image inference.",
-    imageProperties: null,
-    qualityNotes: [],
-    topPrediction: null,
-    predictions: [],
-    nextStep: "Start the Python retinal-analysis service and configure the model checkpoint before expecting image-based output.",
-    disclaimer:
-      "No retinal-model inference was produced for this request. Any answer shown here remains educational only and is not medical advice or a diagnosis.",
-    serviceError: cleanText(error?.message || ""),
-  };
-}
-
-function buildInvalidRetinalImageResponse() {
-  return {
-    answer:
-      "This upload does not appear to be a retinal fundus image. Please upload a clear retinal scan or fundus photograph to use the retinal-analysis workflow.",
-    explanation:
-      "The retinal pipeline first validates whether the uploaded file looks like a real retinal image before running any retinal or diabetes analysis.",
-    disclaimer:
-      "For educational purposes only. This upload was rejected by the retinal-image validator, so no retinal disease or heart-risk analysis was performed.",
-    urgency: "routine",
-  };
 }
 
 function stripCodeFence(text) {
@@ -725,4 +533,94 @@ function fallbackExplanation(topic) {
 
 function fallbackDisclaimer() {
   return "For educational purposes only. This AI-generated response is not medical advice, is not a diagnosis, and does not replace a licensed healthcare professional.";
+}
+
+function buildRetinaFallbackGuidance(retinaResult) {
+  const patientGuidance = retinaResult?.patientGuidance || {};
+  const presentationInfo = retinaResult?.presentationInfo || {};
+  const actionText = Array.isArray(patientGuidance.whatCanBeDone)
+    ? patientGuidance.whatCanBeDone.map(cleanText).filter(Boolean).join(" ")
+    : "";
+  const monitoringText = Array.isArray(presentationInfo.monitoringTips)
+    ? presentationInfo.monitoringTips.map(cleanText).filter(Boolean).join(" ")
+    : "";
+
+  const explanation = [
+    cleanText(presentationInfo.educationalContext),
+    cleanText(patientGuidance.whyItMatters),
+    cleanText(patientGuidance.followUp),
+    actionText,
+    monitoringText,
+  ]
+    .filter(Boolean)
+    .join(" ");
+
+  return {
+    answer:
+      cleanText(presentationInfo.screeningSummary) ||
+      cleanText(patientGuidance.situation) ||
+      "This result is based on the uploaded retinal image.",
+    explanation:
+      explanation ||
+      "Retinal screening tools can sometimes highlight patterns that may need follow-up with an eye specialist.",
+    disclaimer: cleanText(retinaResult?.disclaimer) || fallbackDisclaimer(),
+    urgency: normalizeUrgency(patientGuidance.urgency),
+  };
+}
+
+function mergeUrgency(...values) {
+  const urgencyRank = {
+    routine: 0,
+    soon: 1,
+    urgent: 2,
+  };
+
+  return values.reduce((highest, current) => {
+    const normalizedCurrent = normalizeUrgency(current);
+    return urgencyRank[normalizedCurrent] > urgencyRank[highest] ? normalizedCurrent : highest;
+  }, "routine");
+}
+
+async function callRetinaModel(imageBase64) {
+  let response;
+
+  try {
+    response = await fetch("http://127.0.0.1:5000/predict", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        image: imageBase64,
+      }),
+    });
+  } catch (_error) {
+    const error = new Error("The retina analysis service is unavailable right now. Please try again.");
+    error.statusCode = 502;
+    error.publicMessage = error.message;
+    throw error;
+  }
+
+  let responseBody = {};
+
+  try {
+    responseBody = await response.json();
+  } catch (_error) {
+    responseBody = {};
+  }
+
+  if (!response.ok) {
+    const error = new Error(responseBody.error || "Retina model request failed.");
+
+    if (response.status >= 500) {
+      error.statusCode = 502;
+      error.publicMessage = "The retina analysis service is unavailable right now. Please try again.";
+    } else {
+      error.statusCode = response.status;
+    }
+
+    throw error;
+  }
+
+  return responseBody;
 }

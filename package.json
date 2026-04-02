@@ -5,10 +5,17 @@
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
-    "dev": "node server.js",
-    "retfound:start": "python -m uvicorn retfound_service.app:app --host 127.0.0.1 --port 8001"
+    "dev": "node server.js"
   },
-  "keywords": ["healthcare", "retinal", "education", "ai"],
+  "keywords": [
+    "healthcare",
+    "retinal",
+    "education",
+    "ai"
+  ],
   "author": "CapStone Team",
-  "license": "MIT"
+  "license": "MIT",
+  "dependencies": {
+    "dotenv": "^17.3.1"
+  }
 }
