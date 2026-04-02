@@ -46,7 +46,7 @@
             align-items: center;
             gap: 16px;
             padding: 14px 18px;
-            background: var(--surface);
+            background: linear-gradient(180deg, rgba(255, 255, 255, 0.94) 0%, rgba(255, 255, 255, 0.86) 100%);
             border: 1px solid var(--line);
             border-radius: 20px;
             backdrop-filter: blur(14px);
@@ -86,7 +86,7 @@
         .hero-panel,
         .info-panel,
         .section-card {
-            background: var(--surface);
+            background: linear-gradient(180deg, rgba(255, 255, 255, 0.94) 0%, rgba(255, 255, 255, 0.86) 100%);
             border: 1px solid var(--line);
             border-radius: 28px;
             box-shadow: var(--shadow);
@@ -94,6 +94,20 @@
 
         .hero-panel {
             padding: 40px;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .hero-panel::after {
+            content: "";
+            position: absolute;
+            top: -80px;
+            right: -60px;
+            width: 240px;
+            height: 240px;
+            border-radius: 50%;
+            background: radial-gradient(circle, rgba(14, 143, 111, 0.16), transparent 68%);
+            pointer-events: none;
         }
 
         .eyebrow {
@@ -126,6 +140,36 @@
             font-size: 1.06rem;
             line-height: 1.7;
             max-width: 58ch;
+        }
+
+        .hero-metrics {
+            display: grid;
+            grid-template-columns: repeat(3, minmax(0, 1fr));
+            gap: 12px;
+            margin-top: 24px;
+        }
+
+        .hero-metric {
+            padding: 14px 16px;
+            border-radius: 18px;
+            border: 1px solid rgba(14, 143, 111, 0.14);
+            background: rgba(255, 255, 255, 0.86);
+        }
+
+        .hero-metric-label {
+            display: block;
+            margin-bottom: 6px;
+            color: var(--accent-dark);
+            font-size: 0.8rem;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+        }
+
+        .hero-metric strong {
+            display: block;
+            font-size: 0.97rem;
+            line-height: 1.4;
         }
 
         .hero-actions {
@@ -163,6 +207,22 @@
             background: #fff;
             color: var(--ink);
             border: 1px solid var(--line);
+        }
+
+        .mini-card,
+        .feature-box,
+        .flow-box,
+        .check-item {
+            transition: transform 0.18s ease, box-shadow 0.18s ease, border-color 0.18s ease;
+        }
+
+        .mini-card:hover,
+        .feature-box:hover,
+        .flow-box:hover,
+        .check-item:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 16px 28px rgba(19, 33, 28, 0.1);
+            border-color: rgba(14, 143, 111, 0.18);
         }
 
         .hero-note {
@@ -303,6 +363,10 @@
             .topbar {
                 flex-direction: column;
                 align-items: flex-start;
+            }
+
+            .hero-metrics {
+                grid-template-columns: 1fr;
             }
         }
 

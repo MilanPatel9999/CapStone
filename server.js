@@ -7,6 +7,8 @@ loadEnvFile();
 
 const PORT = Number(process.env.PORT) || 3000;
 const OPENAI_MODEL = process.env.OPENAI_MODEL || "gpt-4o-mini";
+const RETFOUND_SERVICE_URL = process.env.RETFOUND_SERVICE_URL || "http://127.0.0.1:8001";
+const RETFOUND_REQUEST_TIMEOUT_MS = Number(process.env.RETFOUND_REQUEST_TIMEOUT_MS) || 90_000;
 const STATIC_ROUTES = {
   "/": "index.html",
   "/index.html": "index.html",
@@ -32,10 +34,12 @@ const server = http.createServer(async (req, res) => {
     const { pathname } = requestUrl;
 
     if (req.method === "GET" && pathname === "/api/health") {
+      const retinalService = await getRetinalServiceHealth();
       return sendJson(res, 200, {
         status: "ok",
         apiConfigured: Boolean(process.env.OPENAI_API_KEY),
         model: OPENAI_MODEL,
+        retinalService,
       });
     }
 
@@ -43,14 +47,16 @@ const server = http.createServer(async (req, res) => {
       const body = await readJsonBody(req);
       const question = typeof body.question === "string" ? body.question.trim() : "";
       const topic = normalizeTopic(body.topic);
+      const retinalImage = normalizeRetinalImage(body.retinalImage);
+      const hasRetinalWorkflowInput = topic === "eye-health" && Boolean(retinalImage);
 
-      if (!question) {
+      if (!question && !hasRetinalWorkflowInput) {
         return sendJson(res, 400, {
-          error: "Please enter a health-related question before submitting.",
+          error: "Please enter a health-related question or upload a retinal scan image before submitting.",
         });
       }
 
-      if (question.length < 5) {
+      if (question && question.length < 5 && !hasRetinalWorkflowInput) {
         return sendJson(res, 400, {
           error: "Please enter a little more detail so the AI can respond helpfully.",
         });
@@ -62,7 +68,9 @@ const server = http.createServer(async (req, res) => {
         });
       }
 
-      if (!looksHealthRelated(question)) {
+      const effectiveQuestion = buildEffectiveQuestion(question, topic, retinalImage);
+
+      if (!hasRetinalWorkflowInput && !looksHealthRelated(effectiveQuestion)) {
         return sendJson(res, 200, {
           ...outOfScopeResponse(),
           topic,
@@ -71,16 +79,41 @@ const server = http.createServer(async (req, res) => {
         });
       }
 
-      const result = await callOpenAI(question, topic);
+      const retinalAnalysis =
+        hasRetinalWorkflowInput
+          ? await callRetinalService(effectiveQuestion, topic, retinalImage)
+          : null;
+      if (retinalAnalysis && retinalAnalysis.isRetinalImage === false) {
+        return sendJson(res, 200, {
+          ...buildInvalidRetinalImageResponse(),
+          topic,
+          model: OPENAI_MODEL,
+          inScope: true,
+          retinalAnalysis,
+        });
+      }
+
+      const aiQuestion = buildQuestionWithRetinalContext(effectiveQuestion, topic, retinalAnalysis);
+      const result = await callOpenAI(aiQuestion, topic);
+
       return sendJson(res, 200, {
         ...result,
         topic,
         model: OPENAI_MODEL,
+        retinalAnalysis,
       });
     }
 
     if (req.method === "GET" && STATIC_ROUTES[pathname]) {
       return serveFile(res, path.join(ROOT_DIR, STATIC_ROUTES[pathname]));
+    }
+
+    if (req.method === "GET") {
+      const staticFilePath = resolveStaticFilePath(pathname);
+
+      if (staticFilePath) {
+        return serveFile(res, staticFilePath);
+      }
     }
 
     if (req.method === "GET" && pathname === "/favicon.ico") {
@@ -161,6 +194,28 @@ function serveFile(res, filePath) {
   });
 }
 
+function resolveStaticFilePath(requestPath) {
+  const decodedPath = decodeURIComponent(requestPath || "/");
+  const relativePath = decodedPath.replace(/^\/+/, "");
+
+  if (!relativePath) {
+    return null;
+  }
+
+  const resolvedPath = path.resolve(ROOT_DIR, relativePath);
+
+  if (!resolvedPath.startsWith(ROOT_DIR)) {
+    return null;
+  }
+
+  if (!fs.existsSync(resolvedPath)) {
+    return null;
+  }
+
+  const fileStats = fs.statSync(resolvedPath);
+  return fileStats.isFile() ? resolvedPath : null;
+}
+
 function readJsonBody(req) {
   return new Promise((resolve, reject) => {
     let rawBody = "";
@@ -168,7 +223,7 @@ function readJsonBody(req) {
     req.on("data", (chunk) => {
       rawBody += chunk;
 
-      if (rawBody.length > 1_000_000) {
+      if (rawBody.length > 10_000_000) {
         const error = new Error("Request body is too large.");
         error.statusCode = 413;
         reject(error);
@@ -199,6 +254,53 @@ function readJsonBody(req) {
 
 function normalizeTopic(topic) {
   return topic === "eye-health" ? "eye-health" : "general-health";
+}
+
+function buildEffectiveQuestion(question, topic, retinalImage) {
+  const trimmedQuestion = typeof question === "string" ? question.trim() : "";
+
+  if (topic !== "eye-health" || !retinalImage) {
+    return trimmedQuestion;
+  }
+
+  const retinalContext =
+    'The user uploaded an image in retinal scan mode. Respond only with educational, non-diagnostic information about retinal scans, eye health, heart-health related retinal patterns, diabetes-related retinal patterns, or safe next steps. If the typed question is vague, interpret it as a request for educational retinal-image guidance.';
+
+  if (!trimmedQuestion) {
+    return `${retinalContext} Explain what a retinal-analysis workflow may look for in an uploaded scan and remind the user that image-based output is educational only.`;
+  }
+
+  return `${trimmedQuestion}\n\n${retinalContext}`;
+}
+
+function normalizeRetinalImage(retinalImage) {
+  if (!retinalImage || typeof retinalImage !== "object") {
+    return null;
+  }
+
+  const name = typeof retinalImage.name === "string" ? retinalImage.name.trim() : "";
+  const mimeType = typeof retinalImage.mimeType === "string" ? retinalImage.mimeType.trim() : "";
+  const dataUrl = typeof retinalImage.dataUrl === "string" ? retinalImage.dataUrl.trim() : "";
+
+  if (!dataUrl) {
+    return null;
+  }
+
+  if (!/^data:image\/(png|jpeg|jpg|webp);base64,/i.test(dataUrl)) {
+    return null;
+  }
+
+  if (dataUrl.length > 8_000_000) {
+    const error = new Error("Please upload a retinal image under roughly 6 MB.");
+    error.statusCode = 413;
+    throw error;
+  }
+
+  return {
+    name: name || "uploaded-retinal-image",
+    mimeType: mimeType || "image/jpeg",
+    dataUrl,
+  };
 }
 
 async function callOpenAI(question, topic) {
@@ -288,8 +390,7 @@ function buildSystemPrompt(topic) {
   const scope =
     topic === "eye-health"
       ? "Prioritize eye and vision health context when relevant."
-      : "Provide broad educational health information in plain language."
-      "virat kohli";
+      : "Provide broad educational health information in plain language.";
 
   return [
     "You are AIcura, an educational healthcare information assistant.",
@@ -301,6 +402,9 @@ function buildSystemPrompt(topic) {
     "Do not diagnose, prescribe treatment, confirm a condition, or present yourself as a medical professional.",
     "Never state or imply that the user definitely has a condition.",
     'Use careful phrasing such as "possible explanations include", "this can sometimes be associated with", or "people may experience this when".',
+    "If the user message includes retinal-model context, treat it as an educational screening signal only and never as a confirmed finding.",
+    "If a retinal model output label is provided, do not say the person has that disease or stage. Instead say the model flagged a pattern or produced a screening label that would still need clinician review.",
+    "Never restate diabetic retinopathy, heart risk, or any retinal-model output as a diagnosis.",
     "If symptoms suggest an emergency, give general safety guidance to seek urgent medical attention immediately.",
     "Keep the answer concise, practical, and understandable for non-experts.",
     'Return only valid JSON with the keys "in_scope", "answer", "explanation", "disclaimer", and "urgency".',
@@ -309,6 +413,194 @@ function buildSystemPrompt(topic) {
     'The "explanation" should be 1-2 sentences about what factors matter.',
     'The "disclaimer" must clearly say the response is for educational purposes only, is not medical advice, and is not a diagnosis.',
   ].join(" ");
+}
+
+function buildQuestionWithRetinalContext(question, topic, retinalAnalysis) {
+  if (topic !== "eye-health" || !retinalAnalysis || retinalAnalysis.isRetinalImage === false) {
+    return question;
+  }
+
+  const contextParts = [
+    "Retinal analysis context:",
+    retinalAnalysis.summary || "",
+  ];
+
+  if (retinalAnalysis.validation) {
+    contextParts.push(
+      `Validation accepted: ${retinalAnalysis.validation.accepted ? "yes" : "no"}.`,
+      `Retinal confidence: ${retinalAnalysis.validation.retinalScore ?? "unavailable"}.`,
+    );
+  }
+
+  if (retinalAnalysis.diabetesAnalysis?.topPrediction) {
+    const diabetesSignalGuidance = describeScreeningSignalGuidance(
+      "diabetes",
+      retinalAnalysis.diabetesAnalysis.topPrediction,
+      retinalAnalysis.diabetesAnalysis.confidenceBand,
+    );
+    contextParts.push(...diabetesSignalGuidance);
+  }
+
+  if (retinalAnalysis.heartAnalysis?.topPrediction) {
+    const heartSignalGuidance = describeScreeningSignalGuidance(
+      "heart",
+      retinalAnalysis.heartAnalysis.topPrediction,
+      retinalAnalysis.heartAnalysis.confidenceBand,
+    );
+    contextParts.push(...heartSignalGuidance);
+  } else if (retinalAnalysis.heartAnalysis?.status === "pending_checkpoint") {
+    contextParts.push(
+      "Heart-specific RETFound checkpoint is not configured yet.",
+      "Do not describe any heart-risk result for this upload because no heart model output exists.",
+    );
+  }
+
+  return `${question}\n\n${contextParts.join(" ")}`;
+}
+
+function describeScreeningSignalGuidance(domain, prediction, confidenceBand) {
+  if (!prediction) {
+    return [];
+  }
+
+  const label = prediction.label;
+  const confidence = prediction.confidence;
+
+  if (confidenceBand === "low") {
+    return [
+      `${capitalize(domain)} screening output was low confidence: top label ${label} at ${confidence}.`,
+      `Do not restate "${label}" as a likely ${domain} stage or finding in the user-facing answer.`,
+      "Say only that the screening branch produced an uncertain result that may warrant professional review.",
+    ];
+  }
+
+  if (confidenceBand === "tentative") {
+    return [
+      `${capitalize(domain)} screening output was tentative: top label ${label} at ${confidence}.`,
+      `Do not say the user has a confirmed ${domain} condition or stage.`,
+      "Present it only as a cautious screening signal that still needs clinician review.",
+    ];
+  }
+
+  return [
+    `${capitalize(domain)} screening output label (not a diagnosis): ${label} at ${confidence}.`,
+    `Do not say the user has a confirmed ${domain} condition or stage.`,
+    "Present it only as a screening signal that may warrant professional review.",
+  ];
+}
+
+function capitalize(value) {
+  if (!value) {
+    return "";
+  }
+
+  return value.charAt(0).toUpperCase() + value.slice(1);
+}
+
+async function getRetinalServiceHealth() {
+  try {
+    const response = await fetch(`${RETFOUND_SERVICE_URL}/health`, {
+      signal: AbortSignal.timeout(1200),
+    });
+
+    if (!response.ok) {
+      throw new Error(`Retinal service health check failed with status ${response.status}.`);
+    }
+
+    const data = await response.json();
+    return {
+      configured: Boolean(RETFOUND_SERVICE_URL),
+      reachable: true,
+      requestedMode: data.requestedMode || "demo",
+      activeMode: data.activeMode || "demo",
+      modelLoaded: Boolean(data.modelLoaded),
+      modelName: data.modelName || "",
+      validatorEnabled: Boolean(data.validatorEnabled),
+      diabetesEnabled: Boolean(data.diabetesEnabled),
+      diabetesModelLoaded: Boolean(data.diabetesModelLoaded),
+    };
+  } catch (_error) {
+    return {
+      configured: Boolean(RETFOUND_SERVICE_URL),
+      reachable: false,
+      requestedMode: "unknown",
+      activeMode: "unavailable",
+      modelLoaded: false,
+      modelName: "",
+      validatorEnabled: false,
+      diabetesEnabled: false,
+      diabetesModelLoaded: false,
+    };
+  }
+}
+
+async function callRetinalService(question, topic, retinalImage) {
+  try {
+    const response = await fetch(`${RETFOUND_SERVICE_URL}/analyze`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      signal: AbortSignal.timeout(RETFOUND_REQUEST_TIMEOUT_MS),
+      body: JSON.stringify({
+        question,
+        topic,
+        image_name: retinalImage.name,
+        image_data_url: retinalImage.dataUrl,
+      }),
+    });
+
+    const rawText = await response.text();
+    let data = null;
+
+    if (rawText) {
+      try {
+        data = JSON.parse(rawText);
+      } catch (_error) {
+        throw new Error(rawText || "Retinal image analysis failed.");
+      }
+    }
+
+    if (!response.ok) {
+      throw new Error(data?.detail || data?.error || "Retinal image analysis failed.");
+    }
+
+    return data;
+  } catch (error) {
+    return buildRetinalServiceFallback(error);
+  }
+}
+
+function buildRetinalServiceFallback(error) {
+  return {
+    analyzerName: "RETFound service",
+    requestedMode: "unknown",
+    activeMode: "unavailable",
+    modelLoaded: false,
+    modelName: "",
+    summary:
+      "A retinal image was uploaded, but the retinal-analysis service could not be reached. The question-and-answer flow still completed without image inference.",
+    imageProperties: null,
+    qualityNotes: [],
+    topPrediction: null,
+    predictions: [],
+    nextStep: "Start the Python retinal-analysis service and configure the model checkpoint before expecting image-based output.",
+    disclaimer:
+      "No retinal-model inference was produced for this request. Any answer shown here remains educational only and is not medical advice or a diagnosis.",
+    serviceError: cleanText(error?.message || ""),
+  };
+}
+
+function buildInvalidRetinalImageResponse() {
+  return {
+    answer:
+      "This upload does not appear to be a retinal fundus image. Please upload a clear retinal scan or fundus photograph to use the retinal-analysis workflow.",
+    explanation:
+      "The retinal pipeline first validates whether the uploaded file looks like a real retinal image before running any retinal or diabetes analysis.",
+    disclaimer:
+      "For educational purposes only. This upload was rejected by the retinal-image validator, so no retinal disease or heart-risk analysis was performed.",
+    urgency: "routine",
+  };
 }
 
 function stripCodeFence(text) {

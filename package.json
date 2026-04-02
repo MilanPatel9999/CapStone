@@ -5,7 +5,8 @@
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
-    "dev": "node server.js"
+    "dev": "node server.js",
+    "retfound:start": "python -m uvicorn retfound_service.app:app --host 127.0.0.1 --port 8001"
   },
   "keywords": ["healthcare", "retinal", "education", "ai"],
   "author": "CapStone Team",

@@ -40,11 +40,12 @@
                 <div class="note-block">
                     <div class="status-label">Retinal scan module</div>
                     <p class="status-message">
-                        Retinal image upload is part of the next phase. The planned image-analysis
-                        pipeline will estimate heart-health and diabetes-related factors from
-                        retinal scan patterns.
+                        Retinal image intake now includes retinal-image validation, a local
+                        prototype heart report, and a diabetes-screening branch for valid fundus
+                        uploads. A future upgrade can swap the heart prototype for a
+                        task-specific RETFound checkpoint.
                     </p>
-                    <button class="future-button" type="button" disabled>Retinal upload coming soon</button>
+                    <button class="future-button" type="button" disabled>Prototype heart report active</button>
                 </div>
 
                 <div class="prompt-block">
@@ -70,7 +71,7 @@
                 <div class="chat-header">
                     <div>
                         <h2>AIcura Assistant</h2>
-                        <p>Live today: educational Q&amp;A. Next: retinal image analysis for heart-health and diabetes-related factors.</p>
+                        <p>Live today: educational Q&amp;A, retinal-image validation, a local prototype heart report, and diabetes-screening support. Future: swap in a task-specific RETFound heart model.</p>
                     </div>
                     <div class="status-badge" id="statusBadge">Connecting...</div>
                 </div>
@@ -80,8 +81,9 @@
                         <h3>Welcome to AIcura</h3>
                         <p>
                             The current live feature is health and retinal-related question
-                            answering. Retinal image upload for heart-health and diabetes-related
-                            analysis is planned for a future phase.
+                            answering. Retinal image upload now supports image validation,
+                            a local prototype heart report, and diabetes-screening output.
+                            A task-specific RETFound heart checkpoint remains a future upgrade.
                         </p>
                     </section>
                 </div>
@@ -113,6 +115,9 @@
                                 </div>
                                 <input class="file-input" id="retinalImageInput" type="file" accept="image/png,image/jpeg,image/jpg,image/webp">
                                 <div class="upload-status" id="uploadStatus">No retinal scan image selected yet.</div>
+                                <div class="upload-preview" id="uploadPreview" hidden>
+                                    <img class="upload-preview-image" id="uploadPreviewImage" alt="Selected retinal scan preview">
+                                </div>
                             </div>
 
                             <textarea
@@ -122,7 +127,7 @@
                             ></textarea>
 
                             <div class="helper-row">
-                                <span>Live now: Q&amp;A. Planned next: retinal scan upload and image analysis.</span>
+                                <span>Live now: Q&amp;A, retina validation, prototype heart reporting, and diabetes screening.</span>
                                 <span>Shift + Enter for a new line</span>
                             </div>
                         </div>
@@ -149,9 +154,13 @@
         const uploadPanel = document.getElementById("uploadPanel");
         const retinalImageInput = document.getElementById("retinalImageInput");
         const uploadStatus = document.getElementById("uploadStatus");
+        const uploadPreview = document.getElementById("uploadPreview");
+        const uploadPreviewImage = document.getElementById("uploadPreviewImage");
 
         let isLoading = false;
         let selectedRetinalImageName = "";
+        let selectedRetinalImagePreview = "";
+        let selectedRetinalImageType = "";
 
         updateTopicMode();
         updateComposerState();
@@ -182,31 +191,49 @@
 
             if (isRetinalMode) {
                 messageInput.placeholder = "Example: What can a retinal scan image show about diabetes or heart-health related changes?";
-                uploadStatus.textContent = selectedRetinalImageName
-                    ? `${selectedRetinalImageName} selected. This upload option is shown for the retinal workflow mode.`
-                    : "No retinal scan image selected yet.";
+                updateRetinalUploadState();
             } else {
                 messageInput.placeholder = "Example: What are common causes of dry eyes, and when should someone seek care?";
-                retinalImageInput.value = "";
-                selectedRetinalImageName = "";
-                uploadStatus.textContent = "No retinal scan image selected yet.";
+                clearRetinalUpload();
             }
         }
 
-        function handleRetinalImageChange() {
+        async function handleRetinalImageChange() {
             const file = retinalImageInput.files[0];
 
             if (!file) {
-                selectedRetinalImageName = "";
-                uploadStatus.textContent = "No retinal scan image selected yet.";
+                clearRetinalUpload();
                 return;
             }
 
-            selectedRetinalImageName = file.name;
-            uploadStatus.textContent = `${file.name} selected. This upload option is shown for the retinal workflow mode.`;
+            if (!file.type.startsWith("image/")) {
+                clearRetinalUpload();
+                showError("Please choose a PNG, JPG, or WEBP retinal image.");
+                return;
+            }
+
+            if (file.size > 6_000_000) {
+                clearRetinalUpload();
+                showError("Please choose a retinal image under 6 MB.");
+                return;
+            }
+
+            try {
+                selectedRetinalImageName = file.name;
+                selectedRetinalImagePreview = await readFileAsDataUrl(file);
+                selectedRetinalImageType = file.type;
+                updateRetinalUploadState();
+                updateComposerState();
+                hideError();
+            } catch (_error) {
+                clearRetinalUpload();
+                showError("The retinal image could not be loaded. Please choose a different file.");
+            }
         }
 
         async function checkBackendStatus() {
+            apiStatusMessage.classList.remove("error");
+
             try {
                 const response = await fetch("/api/health");
                 const data = await response.json();
@@ -216,8 +243,22 @@
                 }
 
                 if (data.apiConfigured) {
-                    apiStatusMessage.textContent = "Service connected and ready for questions.";
-                    statusBadge.textContent = "Connected";
+                    if (data.retinalService && data.retinalService.reachable) {
+                        if (data.retinalService.validatorEnabled) {
+                            apiStatusMessage.textContent = data.retinalService.diabetesEnabled
+                                ? "Service connected. Health Q&A, retinal-image validation, the prototype heart branch, and the diabetes screening branch are available."
+                                : "Service connected. Health Q&A, retinal-image validation, and the prototype heart branch are available.";
+                            statusBadge.textContent = data.retinalService.diabetesModelLoaded
+                                ? "Q&A + retinal screening"
+                                : "Q&A + retina validator";
+                        } else {
+                            apiStatusMessage.textContent = "Service connected. Health Q&A is live, and the retinal workflow service is online.";
+                            statusBadge.textContent = data.retinalService.modelLoaded ? "Q&A + retinal model" : "Q&A + retinal intake";
+                        }
+                    } else {
+                        apiStatusMessage.textContent = "Service connected and ready for questions. Retinal image intake is available, but the separate retinal model service is offline or not started.";
+                        statusBadge.textContent = "Q&A live";
+                    }
                 } else {
                     apiStatusMessage.textContent = "Service is online, but AI access is not configured yet.";
                     apiStatusMessage.classList.add("error");
@@ -232,6 +273,8 @@
 
         async function sendMessage() {
             const question = messageInput.value.trim();
+            const isRetinalMode = topicSelect.value === "eye-health";
+            const hasRetinalUpload = isRetinalMode && Boolean(selectedRetinalImagePreview);
 
             hideError();
 
@@ -239,13 +282,13 @@
                 return;
             }
 
-            if (!question) {
-                showError("Please enter a health-related question before submitting.");
+            if (!question && !hasRetinalUpload) {
+                showError("Please enter a health-related question or upload a retinal scan image before submitting.");
                 messageInput.focus();
                 return;
             }
 
-            if (question.length < 5) {
+            if (question && question.length < 5 && !hasRetinalUpload) {
                 showError("Please enter a little more detail so the response can be meaningful.");
                 messageInput.focus();
                 return;
@@ -253,13 +296,20 @@
 
             removeEmptyState();
             const attachmentName = selectedRetinalImageName;
-            appendUserMessage(question, attachmentName);
-            const loadingNode = appendLoadingMessage();
+            const attachmentPreview = selectedRetinalImagePreview;
+            const attachmentType = selectedRetinalImageType;
+            const visibleMessage = question || "Retinal scan image uploaded for educational workflow review.";
+            appendUserMessage(visibleMessage, attachmentName, attachmentPreview);
+            const loadingController = appendLoadingMessage({
+                isRetinalMode,
+                hasRetinalUpload,
+                hasQuestion: Boolean(question),
+            });
+            const loadingNode = loadingController.node;
 
             isLoading = true;
             messageInput.value = "";
-            retinalImageInput.value = "";
-            selectedRetinalImageName = "";
+            clearRetinalUpload();
             updateTopicMode();
             updateComposerState();
 
@@ -271,7 +321,14 @@
                     },
                     body: JSON.stringify({
                         question,
-                        topic: topicSelect.value
+                        topic: topicSelect.value,
+                        retinalImage: attachmentPreview
+                            ? {
+                                name: attachmentName,
+                                mimeType: attachmentType,
+                                dataUrl: attachmentPreview
+                            }
+                            : null
                     })
                 });
 
@@ -281,11 +338,14 @@
                     throw new Error(data.error || "The AI request failed.");
                 }
 
+                loadingController.stop();
                 loadingNode.innerHTML = buildAssistantCard(data);
             } catch (error) {
+                loadingController.stop();
                 loadingNode.innerHTML = `<div class="message-bubble"><strong>Request failed.</strong><br>${escapeHtml(error.message)}</div>`;
                 showError(error.message);
             } finally {
+                loadingController.stop();
                 isLoading = false;
                 updateComposerState();
                 messageInput.focus();
@@ -293,10 +353,18 @@
             }
         }
 
-        function appendUserMessage(text, attachmentName) {
+        function appendUserMessage(text, attachmentName, attachmentPreview) {
             const message = document.createElement("div");
             message.className = "message user";
             let messageHtml = `<div class="message-bubble">${formatParagraphs(text)}`;
+
+            if (attachmentPreview) {
+                messageHtml += `
+                    <div class="message-attachment-wrap">
+                        <img class="message-attachment-image" src="${attachmentPreview}" alt="Uploaded retinal scan image preview">
+                    </div>
+                `;
+            }
 
             if (attachmentName) {
                 messageHtml += `<div class="attachment-chip">Retinal scan image: ${escapeHtml(attachmentName)}</div>`;
@@ -308,27 +376,83 @@
             scrollToBottom();
         }
 
-        function appendLoadingMessage() {
+        function appendLoadingMessage(meta) {
+            const steps = getProcessingSteps(meta);
+            let currentStep = 0;
             const message = document.createElement("div");
             message.className = "message assistant";
-            message.innerHTML = `
-                <div class="message-bubble">
-                    <div class="loading-row">
-                        <div class="loading-dot"></div>
-                        <div class="loading-dot"></div>
-                        <div class="loading-dot"></div>
-                        <span>Preparing educational response...</span>
+
+            const render = () => {
+                const progress = Math.max(14, Math.round(((currentStep + 1) / steps.length) * 100));
+                const stepMarkup = steps.map((step, index) => {
+                    const stateClass = index < currentStep ? "complete" : index === currentStep ? "active" : "";
+                    return `<div class="processing-step ${stateClass}">${escapeHtml(step)}</div>`;
+                }).join("");
+
+                message.innerHTML = `
+                    <div class="message-bubble processing-bubble">
+                        <div class="processing-header">
+                            <div class="processing-title">Backend processing</div>
+                            <div class="processing-current">${escapeHtml(steps[currentStep])}</div>
+                        </div>
+                        <div class="processing-progress-track">
+                            <div class="processing-progress-fill" style="width: ${progress}%"></div>
+                        </div>
+                        <div class="processing-steps">
+                            ${stepMarkup}
+                        </div>
                     </div>
-                </div>
-            `;
+                `;
+            };
+
+            render();
             chatArea.appendChild(message);
             scrollToBottom();
-            return message;
+
+            const interval = setInterval(() => {
+                if (currentStep < steps.length - 1) {
+                    currentStep += 1;
+                    render();
+                    scrollToBottom();
+                }
+            }, 1500);
+
+            return {
+                node: message,
+                stop() {
+                    clearInterval(interval);
+                }
+            };
+        }
+
+        function getProcessingSteps(meta) {
+            if (meta?.isRetinalMode && meta?.hasRetinalUpload) {
+                return [
+                    "Uploading retinal image to the secure application server",
+                    "Validating whether the uploaded file is a retinal fundus image",
+                    "Preparing retinal image tensors for screening models",
+                    "Running prototype cardiovascular follow-up analysis",
+                    "Running diabetes-related retinal screening analysis",
+                    "Compiling educational screening report and safety guidance",
+                ];
+            }
+
+            return [
+                "Checking whether the request is within health-related scope",
+                "Preparing the health prompt for the AI service",
+                "Requesting educational response from the AI backend",
+                "Applying safety guidance and disclaimer formatting",
+            ];
         }
 
         function buildAssistantCard(data) {
             const urgency = normalizeUrgency(data.urgency);
             const badgeClass = `urgency-badge urgency-${urgency}`;
+            const retinaScreeningCard = buildRetinaScreeningCard(data, badgeClass, urgency);
+
+            if (retinaScreeningCard) {
+                return retinaScreeningCard;
+            }
 
             return `
                 <div class="message-bubble">
@@ -337,14 +461,12 @@
                             <div class="result-title">Educational response</div>
                             <span class="${badgeClass}">${escapeHtml(getCareLabel(urgency))}</span>
                         </div>
-                        <div class="result-section">
-                            <h4>Overview</h4>
-                            <p>${formatParagraphs(data.answer)}</p>
-                        </div>
+                        ${buildPrimaryResponseSections(data)}
                         <div class="result-section">
                             <h4>Why this may matter</h4>
-                            <p>${formatParagraphs(data.explanation)}</p>
+                            <p>${formatParagraphs(buildWhyThisMayMatterText(data))}</p>
                         </div>
+                        ${buildRetinalAnalysisSection(data.retinalAnalysis)}
                         <div class="result-section">
                             <h4>Important note</h4>
                             <p>${formatParagraphs(data.disclaimer)}</p>
@@ -352,6 +474,616 @@
                     </div>
                 </div>
             `;
+        }
+
+        function buildRetinaScreeningCard(data, badgeClass, urgency) {
+            const retinalAnalysis = data.retinalAnalysis;
+
+            if (!retinalAnalysis || retinalAnalysis.isRetinalImage !== true) {
+                return "";
+            }
+
+            const heartAnalysis = retinalAnalysis.heartAnalysis;
+            const diabetesAnalysis = retinalAnalysis.diabetesAnalysis;
+
+            return `
+                <div class="message-bubble">
+                    <div class="result-grid">
+                        <div class="result-top">
+                            <div class="result-title">Retina Screening Summary</div>
+                            <span class="${badgeClass}">${escapeHtml(getCareLabel(urgency))}</span>
+                        </div>
+                        ${buildReportSection("Screening summary", buildProfessionalScreeningSummary(retinalAnalysis))}
+                        ${buildReportSection("Image processing", buildProfessionalImageProcessingText(retinalAnalysis))}
+                        ${buildProfessionalAnalysisSection("Heart disease analysis", heartAnalysis, "heart")}
+                        ${buildProfessionalAnalysisSection("Diabetes analysis", diabetesAnalysis, "diabetes")}
+                        ${buildReportListSection("Recommended next steps", buildProfessionalNextSteps(heartAnalysis, diabetesAnalysis))}
+                        ${buildReportSection("Development status", buildDevelopmentStatusText())}
+                        <div class="result-section">
+                            <h4>Important note</h4>
+                            <p>${formatParagraphs(buildProfessionalImportantNote(data.disclaimer))}</p>
+                        </div>
+                    </div>
+                </div>
+            `;
+        }
+
+        function buildProfessionalScreeningSummary(retinalAnalysis) {
+            const heartText = buildProfessionalOutcomePhrase(retinalAnalysis.heartAnalysis, "heart");
+            const diabetesText = buildProfessionalOutcomePhrase(retinalAnalysis.diabetesAnalysis, "diabetes");
+
+            return `The uploaded retinal image passed validation and completed the prototype screening workflow. ${heartText} ${diabetesText} These results should be read as preliminary screening support only and not as a confirmed diagnosis.`;
+        }
+
+        function buildProfessionalImageProcessingText(retinalAnalysis) {
+            const image = retinalAnalysis.imageProperties || {};
+            const validation = retinalAnalysis.validation || {};
+            const qualityLabel = validation.quality?.label ? validation.quality.label : "quality unavailable";
+            const qualityConfidence = validation.quality?.confidence ? formatConfidence(validation.quality.confidence) : "confidence unavailable";
+            const validationScore = Number.isFinite(Number(validation.retinalScore))
+                ? Number(validation.retinalScore).toFixed(2)
+                : "unavailable";
+
+            return `The upload was accepted as a retinal fundus image. Resolution: ${image.width || "?"} x ${image.height || "?"}. Validation score: ${validationScore}. Image quality assessment: ${qualityLabel} (${qualityConfidence}).`;
+        }
+
+        function buildProfessionalAnalysisSection(title, analysis, domain) {
+            if (!analysis) {
+                return buildReportSection(title, "This screening branch did not produce an output for the current upload.");
+            }
+
+            const workingCategory = buildProfessionalCategory(domain, analysis);
+            const probabilityBreakdown = buildProbabilityBreakdown({
+                source: domain,
+                predictions: analysis.predictions || []
+            });
+            const body = domain === "diabetes"
+                ? buildProfessionalDiabetesAnalysisBody(analysis, workingCategory)
+                : buildProfessionalHeartAnalysisBody(analysis, workingCategory);
+
+            return `
+                <div class="result-section">
+                    <h4>${escapeHtml(title)}</h4>
+                    <p>${formatParagraphs(body)}</p>
+                    ${probabilityBreakdown.length ? `<div class="report-probability-grid">${probabilityBreakdown.map((item) => `<div class="report-probability-chip">${escapeHtml(item)}</div>`).join("")}</div>` : ""}
+                </div>
+            `;
+        }
+
+        function buildProfessionalHeartAnalysisBody(analysis, workingCategory) {
+            const confidence = analysis.topPrediction ? formatConfidence(analysis.topPrediction.confidence) : "confidence unavailable";
+            return [
+                buildProfessionalAnalysisSummary("heart", analysis, workingCategory),
+                `Screening rating: ${buildProfessionalSeverityRating("heart", analysis)}.`,
+                `Working category: ${workingCategory}.`,
+                `Model confidence: ${confidence}.`,
+                buildProfessionalCertaintyText(analysis),
+            ].join(" ");
+        }
+
+        function buildProfessionalDiabetesAnalysisBody(analysis, workingCategory) {
+            const confidence = analysis.topPrediction ? formatConfidence(analysis.topPrediction.confidence) : "confidence unavailable";
+            return [
+                "This diabetes branch reviews the retinal image for diabetes-related retinal patterns such as diabetic-retinopathy-like changes.",
+                `Pattern status: ${buildDiabetesPatternStatus(analysis)}.`,
+                `Screening rating: ${buildProfessionalSeverityRating("diabetes", analysis)}.`,
+                `Working category: ${workingCategory}.`,
+                `Model confidence: ${confidence}.`,
+                "Diabetes type assessment: Type 1 versus Type 2 diabetes cannot be determined from this retinal-image prototype.",
+                buildProfessionalCertaintyText(analysis),
+            ].join(" ");
+        }
+
+        function buildProfessionalAnalysisSummary(domain, analysis, workingCategory) {
+            if (!analysis.topPrediction) {
+                return `The ${domain} screening branch did not return a clear prototype category for this image.`;
+            }
+
+            if (domain === "heart") {
+                return `A prototype cardiovascular branch reviewed retinal vessel and image-pattern context. The current result suggests ${workingCategory.toLowerCase()}, which should be treated as a follow-up signal rather than a diagnosis of heart disease.`;
+            }
+
+            return `A diabetes-focused retinal branch reviewed the uploaded image for retinal patterns associated with diabetic eye disease. The current result suggests ${workingCategory.toLowerCase()}, which should be treated as a screening category rather than a confirmed stage.`;
+        }
+
+        function buildProfessionalCategory(domain, analysis) {
+            if (!analysis?.topPrediction) {
+                return "No clear prototype category";
+            }
+
+            const label = analysis.topPrediction.label;
+
+            if (domain === "heart") {
+                if (label.includes("higher")) {
+                    return "possible higher cardiovascular follow-up signal";
+                }
+
+                if (label.includes("moderate")) {
+                    return "possible moderate cardiovascular follow-up signal";
+                }
+
+                return "possible lower cardiovascular follow-up signal";
+            }
+
+            const labelMap = {
+                No_DR: "no clear diabetes-related retinal pattern",
+                Mild: "possible mild diabetes-related retinal pattern",
+                Moderate: "possible moderate diabetes-related retinal pattern",
+                Severe: "possible severe diabetes-related retinal pattern",
+                Proliferative_DR: "possible advanced diabetes-related retinal pattern",
+            };
+
+            return labelMap[label] || `possible ${label.toLowerCase()} retinal pattern`;
+        }
+
+        function buildProfessionalSeverityRating(domain, analysis) {
+            if (!analysis?.topPrediction) {
+                return "inconclusive";
+            }
+
+            if (analysis.confidenceBand === "low") {
+                return "low-certainty prototype rating";
+            }
+
+            if (domain === "heart") {
+                const label = analysis.topPrediction.label;
+                if (label.includes("higher")) {
+                    return "higher follow-up priority";
+                }
+                if (label.includes("moderate")) {
+                    return "moderate follow-up priority";
+                }
+                return "lower follow-up priority";
+            }
+
+            const labelMap = {
+                No_DR: "no strong diabetes-related retinal signal",
+                Mild: "mild apparent pattern",
+                Moderate: "moderate apparent pattern",
+                Severe: "higher apparent pattern",
+                Proliferative_DR: "highest apparent pattern",
+            };
+
+            return labelMap[analysis.topPrediction.label] || "prototype severity estimate";
+        }
+
+        function buildDiabetesPatternStatus(analysis) {
+            if (!analysis?.topPrediction) {
+                return "no clear diabetes-related retinal pattern could be determined";
+            }
+
+            if (analysis.topPrediction.label === "No_DR") {
+                return "no clear diabetes-related retinal pattern flagged";
+            }
+
+            if (analysis.confidenceBand === "low") {
+                return "possible diabetes-related retinal pattern flagged, but the result remains uncertain";
+            }
+
+            return "possible diabetes-related retinal pattern flagged";
+        }
+
+        function buildProfessionalCertaintyText(analysis) {
+            if (!analysis?.topPrediction) {
+                return "The model did not produce enough signal to support a clear prototype interpretation.";
+            }
+
+            if (analysis.confidenceBand === "low") {
+                return "The model certainty is low for this image, so this output should be treated as a weak prototype suggestion rather than a strong result.";
+            }
+
+            if (analysis.confidenceBand === "tentative") {
+                return "The model certainty is tentative for this image, so the output should be used for follow-up discussion and not as a confirmed finding.";
+            }
+
+            return "The model certainty is stronger for this image, but the result still requires specialist confirmation.";
+        }
+
+        function buildProfessionalOutcomePhrase(analysis, domain) {
+            if (!analysis?.topPrediction) {
+                return domain === "heart"
+                    ? "The heart branch did not produce a clear cardiovascular follow-up category."
+                    : "The diabetes branch did not produce a clear retinal screening category.";
+            }
+
+            const confidence = formatConfidence(analysis.topPrediction.confidence);
+            const category = buildProfessionalCategory(domain, analysis);
+
+            if (analysis.confidenceBand === "low") {
+                return domain === "heart"
+                    ? `The heart branch produced a low-certainty cardiovascular follow-up signal at ${confidence}.`
+                    : `The diabetes branch produced a low-certainty screening category of ${category} at ${confidence}.`;
+            }
+
+            return domain === "heart"
+                ? `The heart branch produced ${category} at ${confidence}.`
+                : `The diabetes branch produced ${category} at ${confidence}.`;
+        }
+
+        function buildProfessionalNextSteps(heartAnalysis, diabetesAnalysis) {
+            const lines = [
+                "Arrange an optometrist or ophthalmology review soon so a clinician can confirm whether the retinal changes are clinically meaningful.",
+                "If you have diabetes, high blood pressure, high cholesterol, or kidney disease, mention that history during the visit.",
+                "Seek faster care if vision worsens suddenly, straight lines look distorted, or you notice new flashes, floaters, or blind spots.",
+            ];
+
+            if (heartAnalysis?.topPrediction && heartAnalysis.confidenceBand !== "low") {
+                lines.splice(1, 0, "Because the cardiovascular follow-up branch produced a signal, consider discussing blood pressure, cholesterol, and overall cardiovascular risk factors at your next medical review.");
+            }
+
+            if (diabetesAnalysis?.topPrediction) {
+                lines.push("If you already have diabetes or prediabetes, ask whether retinal photography, OCT, or a dilated eye examination is needed to clarify the cause of the screening pattern.");
+            }
+
+            return lines;
+        }
+
+        function buildDevelopmentStatusText() {
+            return "RETFound is already pretrained on a very large retinal image set, which gives it strong general retinal feature knowledge. However, a true heart-report model still needs a task-specific checkpoint that maps those retinal features to clearly defined heart-risk labels. For this expo build, the app uses retinal-image validation, a local prototype cardiovascular branch, and a diabetes-oriented retinal screening branch while the full RETFound heart model remains under development.";
+        }
+
+        function buildProfessionalImportantNote(disclaimer) {
+            return `${disclaimer} The heart branch shown here is a prototype demonstration flow and the overall retinal screening experience is still under development.`;
+        }
+
+        function getPrimaryRetinaAnalysis(retinalAnalysis) {
+            if (retinalAnalysis.diabetesAnalysis?.topPrediction) {
+                return {
+                    source: "diabetes",
+                    ...retinalAnalysis.diabetesAnalysis
+                };
+            }
+
+            if (retinalAnalysis.heartAnalysis?.topPrediction) {
+                return {
+                    source: "heart",
+                    ...retinalAnalysis.heartAnalysis
+                };
+            }
+
+            return null;
+        }
+
+        function buildReportSection(title, body) {
+            return `
+                <div class="result-section">
+                    <h4>${escapeHtml(title)}</h4>
+                    <p>${formatParagraphs(body)}</p>
+                </div>
+            `;
+        }
+
+        function buildReportListSection(title, items) {
+            if (!Array.isArray(items) || !items.length) {
+                return "";
+            }
+
+            return `
+                <div class="result-section">
+                    <h4>${escapeHtml(title)}</h4>
+                    <div class="report-lines">
+                        ${items.map((item) => `<p>${formatParagraphs(item)}</p>`).join("")}
+                    </div>
+                </div>
+            `;
+        }
+
+        function buildScreeningSummaryText(retinalAnalysis, primaryAnalysis) {
+            const category = buildWorkingCategoryText(primaryAnalysis).toLowerCase();
+
+            if (!primaryAnalysis) {
+                return "The uploaded image passed retinal-image validation and entered the screening workflow, but no clear prototype category could be produced from the current model output. Treat this as an educational screening summary rather than a final category.";
+            }
+
+            if (primaryAnalysis.confidenceBand === "low") {
+                return `The uploaded image passed retinal-image validation and the prototype screening flagged ${category}, but the certainty is limited. Treat this as an educational screening summary rather than a final category.`;
+            }
+
+            if (primaryAnalysis.confidenceBand === "tentative") {
+                return `The uploaded image passed retinal-image validation and the prototype screening flagged ${category} with tentative certainty. Treat this as an educational screening summary rather than a final category.`;
+            }
+
+            return `The uploaded image passed retinal-image validation and the prototype screening highlighted ${category}. Even so, this should still be treated as an educational screening summary rather than a final category.`;
+        }
+
+        function buildRetinaWhyThisMatters(primaryAnalysis) {
+            if (primaryAnalysis?.source === "heart") {
+                return "Retinal blood-vessel patterns can sometimes be used as follow-up screening context for broader cardiovascular health, but the exact meaning of those patterns requires proper clinical review and cannot be confirmed from this prototype alone.";
+            }
+
+            return "Early retinal changes can sometimes be linked to conditions such as diabetic eye disease, blood-vessel changes, or other retinal problems, but the exact cause still needs specialist confirmation.";
+        }
+
+        function buildActionSteps(primaryAnalysis) {
+            const lines = [
+                "Book a dilated eye examination soon so a clinician can confirm the cause of the screening changes.",
+                "If you have diabetes or hypertension, review how well those conditions are controlled.",
+                "Monitor for worsening blur, distortion, new floaters, or reduced vision between now and the appointment.",
+            ];
+
+            if (primaryAnalysis?.source === "heart") {
+                lines[1] = "If you have diabetes, high blood pressure, or cardiovascular risk factors, review how well those conditions are controlled.";
+            }
+
+            return lines;
+        }
+
+        function buildMonitoringSteps() {
+            return [
+                "Watch for blur that is becoming more noticeable rather than improving.",
+                "Check whether straight lines look bent or whether reading becomes harder.",
+                "Note any new floaters, patches of missing vision, or more glare than usual.",
+            ];
+        }
+
+        function buildVisitQuestions(primaryAnalysis) {
+            const primaryQuestion = primaryAnalysis?.source === "heart"
+                ? "Do these changes suggest blood-vessel changes or another retinal issue that could be relevant to cardiovascular follow-up?"
+                : "Do these changes suggest diabetic eye disease, blood-vessel changes, or something else?";
+
+            return [
+                primaryQuestion,
+                "Would retinal photographs, OCT, or a dilated exam help clarify the cause?",
+                "How soon should the next follow-up visit happen if symptoms stay the same?",
+            ];
+        }
+
+        function buildRiskFactorLines() {
+            return [
+                "Diabetes, high blood pressure, high cholesterol, or kidney disease",
+                "Previous retinal treatment, eye injections, laser treatment, or eye surgery",
+                "Recent vision changes, headaches, flashes, floaters, or missing areas of vision",
+            ];
+        }
+
+        function buildEscalationLines() {
+            return [
+                "Rapidly worsening vision",
+                "New flashes, floaters, or distorted central vision",
+                "Painful red eye or sudden blind spots",
+            ];
+        }
+
+        function buildFollowUpText(retinalAnalysis, primaryAnalysis) {
+            if (primaryAnalysis?.confidenceBand === "low") {
+                return "Please arrange an eye specialist or optometrist review soon rather than waiting for the next routine visit, especially if you already have diabetes, high blood pressure, or vision changes.";
+            }
+
+            return "Please arrange an eye specialist or optometrist review soon rather than waiting for the next routine visit.";
+        }
+
+        function buildImageCheckText(retinalAnalysis) {
+            const image = retinalAnalysis.imageProperties || {};
+            const validationScore = retinalAnalysis.validation?.retinalScore;
+            const dimensions = `${escapeHtml(String(image.width || "?"))} x ${escapeHtml(String(image.height || "?"))}`;
+            const score = Number.isFinite(Number(validationScore))
+                ? Number(validationScore).toFixed(2)
+                : "unavailable";
+
+            return `The upload was accepted as a retinal fundus image and screened at ${dimensions} resolution. Validation score: ${score}.`;
+        }
+
+        function buildPrototypeNoteText(retinalAnalysis) {
+            const heartMode = retinalAnalysis.heartAnalysis?.status === "prototype"
+                ? "a prototype heart-follow-up branch"
+                : "the current retinal screening flow";
+
+            return `Presentation mode: the app is demonstrating retinal-image validation, ${heartMode}, and educational follow-up guidance. The current classifier output should not be treated as a definitive diagnosis.`;
+        }
+
+        function buildPrototypeOutcomeText(primaryAnalysis) {
+            if (!primaryAnalysis) {
+                return "Inconclusive prototype result";
+            }
+
+            if (primaryAnalysis.confidenceBand === "low") {
+                return "Inconclusive prototype result";
+            }
+
+            if (primaryAnalysis.confidenceBand === "tentative") {
+                return "Tentative prototype result";
+            }
+
+            return "Prototype screening signal detected";
+        }
+
+        function buildWorkingCategoryText(primaryAnalysis) {
+            if (!primaryAnalysis?.topPrediction) {
+                return "No clear pattern";
+            }
+
+            const label = primaryAnalysis.topPrediction.label;
+
+            if (primaryAnalysis.source === "heart") {
+                if (label.includes("higher")) {
+                    return "Possible higher cardiovascular follow-up pattern";
+                }
+
+                if (label.includes("moderate")) {
+                    return "Possible moderate cardiovascular follow-up pattern";
+                }
+
+                return "Possible lower cardiovascular follow-up pattern";
+            }
+
+            const labelMap = {
+                No_DR: "Possible normal pattern",
+                Mild: "Possible mild pattern",
+                Moderate: "Possible moderate pattern",
+                Severe: "Possible severe pattern",
+                Proliferative_DR: "Possible advanced pattern",
+            };
+
+            return labelMap[label] || `Possible ${label.toLowerCase()} pattern`;
+        }
+
+        function buildSituationText(primaryAnalysis) {
+            if (!primaryAnalysis?.topPrediction) {
+                return "This screening did not produce a clear highlighted pattern, so a proper eye examination is still the safest next step if symptoms or risk factors are present.";
+            }
+
+            if (primaryAnalysis.source === "heart") {
+                return "This screening suggests retinal vessel patterns that may justify a broader cardiovascular follow-up discussion, but the result is still only a prototype signal.";
+            }
+
+            const label = primaryAnalysis.topPrediction.label;
+            const situationMap = {
+                No_DR: "This screening did not identify a strong diabetic-retinopathy pattern, but a proper eye examination is still important if symptoms or risk factors are present.",
+                Mild: "This screening suggests mild retinal changes that deserve a proper eye examination.",
+                Moderate: "This screening suggests moderate retinal changes that deserve timely eye examination and follow-up.",
+                Severe: "This screening suggests more advanced retinal changes that should be checked promptly by an eye specialist.",
+                Proliferative_DR: "This screening suggests advanced retinal changes that warrant prompt specialist review.",
+            };
+
+            return situationMap[label] || "This screening suggests retinal changes that deserve a proper eye examination.";
+        }
+
+        function buildCertaintyNoteText(primaryAnalysis) {
+            if (!primaryAnalysis?.topPrediction) {
+                return "The model did not produce a clear label for this image, so the screening result should be treated as inconclusive.";
+            }
+
+            if (primaryAnalysis.confidenceBand === "low") {
+                return "The model's certainty is low for this image, so the predicted label should be treated as a weak screening suggestion rather than a strong result.";
+            }
+
+            if (primaryAnalysis.confidenceBand === "tentative") {
+                return "The model's certainty is only tentative for this image, so the predicted label should be treated as a cautious screening suggestion rather than a confirmed finding.";
+            }
+
+            return "The model's certainty is stronger for this image, but the result should still be treated as screening support rather than a definitive diagnosis.";
+        }
+
+        function buildProbabilityBreakdown(primaryAnalysis) {
+            if (!primaryAnalysis?.predictions?.length) {
+                return [];
+            }
+
+            return primaryAnalysis.predictions.map((item) => `${formatPrototypeLabel(primaryAnalysis.source, item.label)}: ${formatConfidence(item.confidence)}`);
+        }
+
+        function formatPrototypeLabel(source, label) {
+            if (source === "heart") {
+                return label
+                    .replace("cardiovascular follow-up signal", "cardiovascular signal")
+                    .replace(/\b\w/g, (match) => match.toUpperCase());
+            }
+
+            const labelMap = {
+                No_DR: "No clear diabetes-related pattern",
+                Mild: "Mild diabetes-related pattern",
+                Moderate: "Moderate diabetes-related pattern",
+                Severe: "Severe diabetes-related pattern",
+                Proliferative_DR: "Advanced diabetes-related pattern",
+            };
+
+            return labelMap[label] || label;
+        }
+
+        function buildAdditionalExplanationText(retinalAnalysis, primaryAnalysis) {
+            const baseText = primaryAnalysis?.source === "heart"
+                ? "The screening result suggests possible retinal vessel patterns that may be worth discussing as part of broader cardiovascular follow-up, but this remains a prototype output rather than a confirmed heart finding."
+                : `${buildSituationText(primaryAnalysis)} It is important to schedule a dilated eye examination with an eye specialist soon to confirm the cause and make sure your eye health is monitored properly.`;
+
+            if (retinalAnalysis.heartAnalysis?.status === "prototype" && primaryAnalysis?.source !== "heart") {
+                return `${baseText} A separate prototype heart-follow-up branch also ran in the background for educational demo purposes.`;
+            }
+
+            return baseText;
+        }
+
+        function buildPrimaryResponseSections(data) {
+            const retinalAnalysis = data.retinalAnalysis;
+
+            if (!retinalAnalysis || retinalAnalysis.isRetinalImage !== true) {
+                return `
+                    <div class="result-section">
+                        <h4>Overview</h4>
+                        <p>${formatParagraphs(data.answer)}</p>
+                    </div>
+                `;
+            }
+
+            const heartSection = buildReportSection(
+                "Heart follow-up",
+                buildHeartOverviewText(retinalAnalysis.heartAnalysis)
+            );
+            const diabetesSection = buildReportSection(
+                "Diabetes screening",
+                buildDiabetesOverviewText(retinalAnalysis.diabetesAnalysis)
+            );
+
+            return `${heartSection}${diabetesSection}`;
+        }
+
+        function buildReportSection(title, body) {
+            return `
+                <div class="result-section">
+                    <h4>${escapeHtml(title)}</h4>
+                    <p>${formatParagraphs(body)}</p>
+                </div>
+            `;
+        }
+
+        function buildHeartOverviewText(analysis) {
+            if (!analysis) {
+                return "Heart-related retinal screening information is not available for this upload.";
+            }
+
+            const topLabel = analysis.topPrediction?.label
+                ? `"${analysis.topPrediction.label}"`
+                : "no clear heart-related label";
+
+            if (analysis.status === "prototype") {
+                if (analysis.confidenceBand === "low") {
+                    return `The heart branch produced a low-confidence prototype follow-up signal, so the current upload did not show a strong cardiovascular screening flag. This should be treated as a cautious screening result only.`;
+                }
+
+                if (analysis.confidenceBand === "tentative") {
+                    return `The heart branch produced a tentative prototype follow-up signal with a top label of ${topLabel}. This can be used as a prompt for follow-up discussion, but it is still not a diagnosis or a confirmed heart-risk result.`;
+                }
+
+                return `The heart branch produced a stronger prototype follow-up signal with a top label of ${topLabel}. This is still a screening-style result that would need clinician review before drawing conclusions.`;
+            }
+
+            if (analysis.status === "available") {
+                return `A heart-specific model returned a screening output with a top label of ${topLabel}. This should still be read as educational screening support rather than a diagnosis.`;
+            }
+
+            return analysis.summary || "Heart-related retinal screening information is not available for this upload.";
+        }
+
+        function buildDiabetesOverviewText(analysis) {
+            if (!analysis) {
+                return "Diabetes-related retinal screening information is not available for this upload.";
+            }
+
+            if (!analysis.topPrediction) {
+                return analysis.summary || "The diabetes branch ran, but no clear screening output was available.";
+            }
+
+            const topLabel = `"${analysis.topPrediction.label}"`;
+            const confidenceText = formatConfidence(analysis.topPrediction.confidence);
+
+            if (analysis.confidenceBand === "low") {
+                return `The diabetes branch returned an uncertain screening label of ${topLabel} at ${confidenceText}. Because this result is low confidence, it should not be treated as a likely stage and should only be used as a prompt for professional review.`;
+            }
+
+            if (analysis.confidenceBand === "tentative") {
+                return `The diabetes branch returned a tentative screening label of ${topLabel} at ${confidenceText}. This may support follow-up discussion, but it is still not a diagnosis or a confirmed disease stage.`;
+            }
+
+            return `The diabetes branch returned a stronger screening label of ${topLabel} at ${confidenceText}. Even so, it remains a screening-style result and would still need clinician confirmation.`;
+        }
+
+        function buildWhyThisMayMatterText(data) {
+            const retinalAnalysis = data.retinalAnalysis;
+
+            if (!retinalAnalysis || retinalAnalysis.isRetinalImage !== true) {
+                return data.explanation;
+            }
+
+            return "Retinal images can show blood-vessel and tissue patterns that are sometimes used for follow-up screening related to cardiovascular health and diabetes. These signals are not definitive on their own, so they should be reviewed with a healthcare professional rather than treated as a diagnosis.";
         }
 
         function normalizeUrgency(value) {
@@ -376,6 +1108,119 @@
 
         function formatParagraphs(text) {
             return escapeHtml(String(text || "")).replace(/\n/g, "<br>");
+        }
+
+        function buildRetinalAnalysisSection(retinalAnalysis) {
+            if (!retinalAnalysis) {
+                return "";
+            }
+
+            const imageProperties = retinalAnalysis.imageProperties
+                ? `<p><strong>Image details:</strong> ${escapeHtml(retinalAnalysis.imageProperties.name || "uploaded-retinal-image")} | ${escapeHtml(String(retinalAnalysis.imageProperties.width || "?"))}x${escapeHtml(String(retinalAnalysis.imageProperties.height || "?"))}</p>`
+                : "";
+            const validation = buildValidationBlock(retinalAnalysis.validation);
+            const heartAnalysis = buildModelBlock("Heart analysis", retinalAnalysis.heartAnalysis);
+            const diabetesAnalysis = buildModelBlock("Diabetes analysis", retinalAnalysis.diabetesAnalysis);
+            const qualityNotes = Array.isArray(retinalAnalysis.qualityNotes) && retinalAnalysis.qualityNotes.length
+                ? `<p><strong>Quality notes:</strong> ${escapeHtml(retinalAnalysis.qualityNotes.join(" "))}</p>`
+                : "";
+            const nextStep = retinalAnalysis.nextStep
+                ? `<p class="retinal-note">${formatParagraphs(retinalAnalysis.nextStep)}</p>`
+                : "";
+
+            return `
+                <div class="result-section">
+                    <h4>Retinal image workflow</h4>
+                    <div class="retinal-meta-list">
+                        ${retinalAnalysis.summary ? `<p>${formatParagraphs(retinalAnalysis.summary)}</p>` : ""}
+                        ${imageProperties}
+                        ${validation}
+                        ${heartAnalysis}
+                        ${diabetesAnalysis}
+                        ${qualityNotes}
+                        ${nextStep}
+                    </div>
+                </div>
+            `;
+        }
+
+        function buildValidationBlock(validation) {
+            if (!validation) {
+                return "";
+            }
+
+            const acceptedLabel = validation.accepted
+                ? "Accepted as retinal image"
+                : "Rejected as non-retinal image";
+            const retinalScore = Number(validation.retinalScore);
+            const quality = validation.quality
+                ? ` | quality: ${escapeHtml(validation.quality.label)} (${formatConfidence(validation.quality.confidence)})`
+                : "";
+            const topLabel = validation.topLabel
+                ? ` | top label: ${escapeHtml(validation.topLabel)}`
+                : "";
+
+            return `
+                <div class="retinal-subcard">
+                    <div class="retinal-subtitle">Validation</div>
+                    <p><strong>${acceptedLabel}</strong>${Number.isFinite(retinalScore) ? ` | retinal confidence: ${formatConfidence(retinalScore)}` : ""}${topLabel}${quality}</p>
+                </div>
+            `;
+        }
+
+        function buildModelBlock(title, analysis) {
+            if (!analysis) {
+                return "";
+            }
+
+            const topPrediction = analysis.topPrediction
+                ? `<p><strong>${analysis.confidenceBand === "low" ? "Top label (uncertain):" : "Top screening output:"}</strong> ${escapeHtml(analysis.topPrediction.label)} (${formatConfidence(analysis.topPrediction.confidence)})</p>`
+                : "";
+
+            return `
+                <div class="retinal-subcard">
+                    <div class="retinal-subtitle">${escapeHtml(title)}</div>
+                    <p>${formatParagraphs(analysis.summary || "No model summary is available.")}</p>
+                    ${topPrediction}
+                </div>
+            `;
+        }
+
+        function formatConfidence(value) {
+            const confidence = Number(value);
+
+            if (!Number.isFinite(confidence)) {
+                return "confidence unavailable";
+            }
+
+            return `${(confidence * 100).toFixed(1)}% confidence`;
+        }
+
+        function clearRetinalUpload() {
+            retinalImageInput.value = "";
+            selectedRetinalImageName = "";
+            selectedRetinalImagePreview = "";
+            selectedRetinalImageType = "";
+            updateRetinalUploadState();
+            updateComposerState();
+        }
+
+        function updateRetinalUploadState() {
+            uploadStatus.textContent = selectedRetinalImageName
+                ? `${selectedRetinalImageName} selected. This upload option is shown for the retinal workflow mode.`
+                : "No retinal scan image selected yet.";
+
+            uploadPreview.hidden = !selectedRetinalImagePreview;
+            uploadPreviewImage.src = selectedRetinalImagePreview || "";
+        }
+
+        function readFileAsDataUrl(file) {
+            return new Promise((resolve, reject) => {
+                const reader = new FileReader();
+                reader.onload = () => resolve(String(reader.result || ""));
+                reader.onerror = () => reject(new Error("File read failed."));
+                reader.readAsDataURL(file);
+            });
         }
 
         function escapeHtml(text) {
@@ -406,9 +1251,11 @@
 
         function updateComposerState() {
             const length = messageInput.value.length;
+            const hasRetinalUpload = topicSelect.value === "eye-health" && Boolean(selectedRetinalImagePreview);
+            const canSend = Boolean(messageInput.value.trim()) || hasRetinalUpload;
             charCount.textContent = `${length} / 500 characters`;
-            sendButton.disabled = isLoading || !messageInput.value.trim();
-            sendButton.textContent = isLoading ? "Sending..." : "Send question";
+            sendButton.disabled = isLoading || !canSend;
+            sendButton.textContent = isLoading ? "Sending..." : (hasRetinalUpload && !messageInput.value.trim() ? "Send for review" : "Send question");
         }
     </script>
 </body>
